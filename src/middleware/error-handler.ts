@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { env } from "../config/env.js";
 import { logger } from "../config/logger.js";
 import { ApiError } from "../lib/api-error.js";
+import { HttpError } from "../lib/http-error.js";
 
 export const errorHandler: ErrorRequestHandler = (
   error: unknown,

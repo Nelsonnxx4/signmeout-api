@@ -8,6 +8,7 @@ import {
 	createShirt,
 	getPublicShirt,
 	getShirt,
+	listPublicSignatures,
 	listShirts,
 	updateShirtStatus,
 } from "./shirt.service.js";
@@ -67,5 +68,16 @@ publicShirtRouter.get(
 		if (!SLUG_PATTERN.test(slug))
 			throw new HttpError(404, "SHIRT_NOT_FOUND", "Shirt not found.");
 		res.json({ success: true, data: await getPublicShirt(slug) });
+	},
+);
+
+publicShirtRouter.get(
+	"/public/shirts/:slug/signatures",
+	publicLimiter,
+	async (req, res) => {
+		const slug = String(req.params.slug);
+		if (!SLUG_PATTERN.test(slug))
+			throw new HttpError(404, "SHIRT_NOT_FOUND", "Shirt not found.");
+		res.json({ success: true, data: await listPublicSignatures(slug) });
 	},
 );

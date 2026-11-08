@@ -5,6 +5,7 @@ import { generateSlug } from "./shirt.slug.js";
 import {
 	canOwnerTransition,
 	toPublicShirt,
+	toPublicSignature,
 	type ShirtStatus,
 	type ShirtType,
 } from "./shirt.rules.js";
@@ -175,4 +176,35 @@ export async function getPublicShirt(slug: string) {
 	if (!row || row.status === "ARCHIVED")
 		throw new HttpError(404, "SHIRT_NOT_FOUND", "Shirt not found.");
 	return toPublicShirt(row);
+}
+
+export async function listPublicSignatures(slug: string) {
+	const row = await prisma.shirt.findUnique({
+		where: { slug },
+		select: {
+			status: true,
+			signatures: {
+				where: { visibility: { not: "HIDDEN" } },
+				orderBy: { submittedAt: "asc" },
+				select: {
+					id: true,
+					assetKey: true,
+					surfaceId: true,
+					uvX: true,
+					uvY: true,
+					width: true,
+					height: true,
+					rotation: true,
+					scale: true,
+					submittedAt: true,
+					visibility: true,
+				},
+			},
+		},
+	});
+
+	if (!row || row.status === "ARCHIVED")
+		throw new HttpError(404, "SHIRT_NOT_FOUND", "Shirt not found.");
+
+	return row.signatures.map(toPublicSignature);
 }

@@ -29,6 +29,20 @@ interface PublicShirtSource {
 	modelVersion: { version: number; modelKey: string };
 }
 
+interface PublicSignatureSource {
+	id: string;
+	assetKey: string;
+	surfaceId: string;
+	uvX: number;
+	uvY: number;
+	width: number;
+	height: number;
+	rotation: number;
+	scale: number;
+	submittedAt: Date;
+	visibility: "VISIBLE" | "HIDDEN" | "FLAGGED";
+}
+
 /** Explicit whitelist. Never spread the database row into a public response. */
 export function toPublicShirt(row: PublicShirtSource) {
 	const school = row.owner.ownerProfile?.school;
@@ -44,5 +58,25 @@ export function toPublicShirt(row: PublicShirtSource) {
 		},
 		status: row.status,
 		signingAvailable: isSigningAvailable(row.status),
+	};
+}
+
+export function toPublicSignature(row: PublicSignatureSource) {
+	return {
+		id: row.id,
+		assetKey: row.assetKey,
+		surfaceId: row.surfaceId,
+		position: {
+			x: row.uvX,
+			y: row.uvY,
+		},
+		size: {
+			width: row.width,
+			height: row.height,
+		},
+		rotation: row.rotation,
+		scale: row.scale,
+		submittedAt: row.submittedAt,
+		visibility: row.visibility,
 	};
 }

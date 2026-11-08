@@ -342,6 +342,7 @@ model Payment {
   providerTransactionId String?
   currency              String        @default("NGN")
   giftAmountKobo        Int
+  signatureSize         Int           @default(1)
   enlargementFeeKobo    Int
   grossAmountKobo       Int
   ownerAmountKobo       Int
@@ -428,6 +429,7 @@ model LedgerEntry {
   amountKobo      Int
   description     String?
   sourceReference String?
+  idempotencyKey  String?         @unique
   createdAt       DateTime        @default(now())
 
   payment    Payment?    @relation(fields: [paymentId], references: [id], onDelete: SetNull)

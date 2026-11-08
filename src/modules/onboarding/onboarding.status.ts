@@ -1,6 +1,7 @@
-// ADAPT: derive these from your existing versioned commission policy service so there is one source of truth.
+import { COMMISSION_POLICY_VERSION } from "../payments/payment.constants.js";
+
 export const COMMISSION_POLICY = {
-	version: "2026-11-v1",
+	version: COMMISSION_POLICY_VERSION,
 	platformPercent: 15,
 	ownerPercent: 85,
 	platformPaysFees: true,

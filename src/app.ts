@@ -31,6 +31,10 @@ export const createApp = () => {
       credentials: true,
     }),
   );
+  app.use(
+    "/api/v1/webhooks/paystack",
+    express.raw({ type: "application/json", limit: "1mb" }),
+  );
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 

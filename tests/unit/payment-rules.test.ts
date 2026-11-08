@@ -1,0 +1,19 @@
+import { describe, expect, it } from "vitest";
+
+import { calculateCheckoutTotals } from "../../src/modules/payments/payment.rules.js";
+
+describe("calculateCheckoutTotals", () => {
+  it("uses the PRD 85/15 split and signature-upcharge rules", () => {
+    const totals = calculateCheckoutTotals(500_000, 4);
+
+    expect(totals.giftAmountKobo).toBe(500_000);
+    expect(totals.enlargementFeeKobo).toBe(100_000);
+    expect(totals.grossAmountKobo).toBe(600_000);
+    expect(totals.ownerAmountKobo).toBe(510_000);
+    expect(totals.platformAmountKobo).toBe(90_000);
+  });
+
+  it("rejects invalid size upgrades for a small gift", () => {
+    expect(() => calculateCheckoutTotals(200_000, 2)).toThrow(RangeError);
+  });
+});
