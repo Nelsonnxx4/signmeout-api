@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CommissionPolicy {
+  id                  String    @id @default(uuid()) @db.Uuid
+  version             String    @unique @db.VarChar(64)
+  platformBasisPoints Int
+  ownerBasisPoints    Int
+  effectiveAt         DateTime
+  retiredAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([effectiveAt])
+  @@map("commission_policies")
+}
+
