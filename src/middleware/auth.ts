@@ -6,11 +6,15 @@ export type AuthSession = NonNullable<
 	Awaited<ReturnType<typeof auth.api.getSession>>
 >;
 
-declare module "express-serve-static-core" {
-	interface Request {
-		auth?: AuthSession;
+declare global {
+	namespace Express {
+		interface Request {
+			auth?: AuthSession;
+		}
 	}
 }
+
+export {};
 
 function deny(
 	req: Request,

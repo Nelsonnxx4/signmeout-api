@@ -1,10 +1,10 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { prisma } from "./database.js"; // ASSUMPTION: exports a PrismaClient named `prisma`
-import { env } from "./env.js"; // ASSUMPTION: exports validated `env`
-import { emailProvider } from "../integrations/email/email.provider.js";
+import { prisma } from "./database.js";
+import { env } from "./env.js";
+import { emailProvider } from "../integrations/email.provider.js";
 
-const isProd = env.NODE_ENV === "production";
+const isProd = env.nodeEnv === "production";
 
 /** Fire-and-forget so response timing can't reveal whether an email exists. */
 function sendInBackground(to: string, subject: string, text: string) {
@@ -15,10 +15,10 @@ function sendInBackground(to: string, subject: string, text: string) {
 
 export const auth = betterAuth({
   appName: "SignMeOut",
-  baseURL: env.BETTER_AUTH_URL,
+  baseURL: env.betterAuthUrl,
   basePath: "/api/v1/auth",
-  secret: env.BETTER_AUTH_SECRET,
-  trustedOrigins: [env.FRONTEND_ORIGIN],
+  secret: env.betterAuthSecret,
+  trustedOrigins: [env.frontendUrl],
 
   database: prismaAdapter(prisma, { provider: "postgresql" }),
 

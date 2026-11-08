@@ -7,6 +7,87 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  OWNER
+  ADMIN
+}
+
+enum SchoolType {
+  FEDERAL
+  STATE
+  PRIVATE
+}
+
+enum SchoolStatus {
+  APPROVED
+  PENDING
+  REJECTED
+}
+
+enum VerificationStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+  REQUIRES_RESUBMISSION
+}
+
+enum ShirtType {
+  SHORT_SLEEVE
+  LONG_SLEEVE
+}
+
+enum ShirtStatus {
+  ACTIVE
+  PAUSED
+  FULL
+  ARCHIVED
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum SigningEntitlementStatus {
+  AVAILABLE
+  USED
+  EXPIRED
+  CANCELLED
+}
+
+enum SignatureVisibilityStatus {
+  VISIBLE
+  HIDDEN
+  FLAGGED
+}
+
+enum LedgerEntryType {
+  OWNER_CREDIT
+  PLATFORM_REVENUE
+  GATEWAY_FEE
+  WITHDRAWAL_HOLD
+  WITHDRAWAL_RELEASE
+  WITHDRAWAL_COMPLETED
+  TRANSFER_FEE
+  REFUND_ADJUSTMENT
+  CHARGEBACK_ADJUSTMENT
+}
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  REQUIRES_ACTION
+  PAID
+  FAILED
+  REVERSED
+  CANCELLED
+}
+
 model CommissionPolicy {
   id                  String    @id @default(uuid()) @db.Uuid
   version             String    @unique @db.VarChar(64)
@@ -21,3 +102,358 @@ model CommissionPolicy {
   @@map("commission_policies")
 }
 
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  role          UserRole @default(OWNER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions              Session[]
+  accounts              Account[]
+  ownerProfile          OwnerProfile?
+  reviewedVerifications StudentVerification[] @relation("VerificationReviewedBy")
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(uuid()) @db.Uuid
+  userId                String    @db.Uuid
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String    @id @default(uuid()) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([identifier, value])
+  @@map("verifications")
+}
+
+model School {
+  id           String       @id @default(uuid()) @db.Uuid
+  name         String       @unique
+  abbreviation String?
+  type         SchoolType?
+  active       Boolean      @default(true)
+  status       SchoolStatus @default(APPROVED)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  departments Department[]
+  profiles    OwnerProfile[]
+
+  @@index([status, active])
+  @@map("schools")
+}
+
+model Department {
+  id        String       @id @default(uuid()) @db.Uuid
+  schoolId  String       @db.Uuid
+  name      String
+  active    Boolean      @default(true)
+  status    SchoolStatus @default(APPROVED)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  school   School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  profiles OwnerProfile[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId, status, active])
+  @@map("departments")
+}
+
+model OwnerProfile {
+  id                    String    @id @default(uuid()) @db.Uuid
+  userId                String    @unique @db.Uuid
+  schoolId              String?   @db.Uuid
+  departmentId          String?   @db.Uuid
+  onboardingCompletedAt DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school                School?                @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  department            Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  bankAccount           BankAccount?
+  commissionAcceptances CommissionAcceptance[]
+  shirts                Shirt[]
+  payments              Payment[]
+  withdrawals           Withdrawal[]
+  verifications         StudentVerification[]
+
+  @@index([schoolId])
+  @@index([departmentId])
+  @@map("owner_profiles")
+}
+
+model BankAccount {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @unique @db.Uuid
+  bankCode          String
+  bankName          String
+  accountNumber     String
+  accountName       String
+  paystackRecipient String?
+  verifiedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  ownerProfile OwnerProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([bankCode])
+  @@map("bank_accounts")
+}
+
+model CommissionAcceptance {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  policyVersion String
+  acceptedAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  ownerProfile OwnerProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([userId, policyVersion])
+  @@index([policyVersion])
+  @@map("commission_acceptances")
+}
+
+model StudentVerification {
+  id               String             @id @default(uuid()) @db.Uuid
+  userId           String             @db.Uuid
+  status           VerificationStatus @default(PENDING)
+  submittedAt      DateTime           @default(now())
+  reviewedAt       DateTime?
+  reviewReason     String?
+  reviewedByUserId String?            @db.Uuid
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  ownerProfile OwnerProfile           @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  reviewedBy   User?                  @relation("VerificationReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  documents    VerificationDocument[]
+
+  @@index([userId, status])
+  @@map("student_verifications")
+}
+
+model VerificationDocument {
+  id             String   @id @default(uuid()) @db.Uuid
+  verificationId String   @db.Uuid
+  originalName   String
+  storageKey     String
+  mimeType       String
+  sizeBytes      Int
+  checksumSha256 String?
+  createdAt      DateTime @default(now())
+
+  verification StudentVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+
+  @@index([verificationId])
+  @@map("verification_documents")
+}
+
+model ShirtModelVersion {
+  id        String    @id @default(uuid()) @db.Uuid
+  shirtType ShirtType
+  version   Int
+  modelKey  String
+  isCurrent Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  shirts Shirt[]
+
+  @@unique([shirtType, version])
+  @@index([shirtType, isCurrent])
+  @@map("shirt_model_versions")
+}
+
+model Shirt {
+  id             String      @id @default(uuid()) @db.Uuid
+  ownerId        String      @db.Uuid
+  shirtType      ShirtType
+  slug           String      @unique
+  modelVersionId String      @db.Uuid
+  status         ShirtStatus @default(ACTIVE)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  ownerProfile        OwnerProfile         @relation(fields: [ownerId], references: [userId], onDelete: Cascade)
+  modelVersion        ShirtModelVersion    @relation(fields: [modelVersionId], references: [id], onDelete: Restrict)
+  payments            Payment[]
+  signatures          Signature[]
+  signingEntitlements SigningEntitlement[]
+
+  @@unique([ownerId, shirtType])
+  @@index([ownerId])
+  @@index([status])
+  @@map("shirts")
+}
+
+model Payment {
+  id                    String        @id @default(uuid()) @db.Uuid
+  ownerId               String        @db.Uuid
+  shirtId               String?       @db.Uuid
+  reference             String        @unique
+  provider              String
+  providerTransactionId String?
+  currency              String        @default("NGN")
+  giftAmountKobo        Int
+  enlargementFeeKobo    Int
+  grossAmountKobo       Int
+  ownerAmountKobo       Int
+  platformAmountKobo    Int
+  status                PaymentStatus @default(PENDING)
+  paidAt                DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  ownerProfile  OwnerProfile         @relation(fields: [ownerId], references: [userId], onDelete: Cascade)
+  shirt         Shirt?               @relation(fields: [shirtId], references: [id], onDelete: SetNull)
+  events        PaymentEvent[]
+  entitlements  SigningEntitlement[]
+  signatures    Signature[]
+  ledgerEntries LedgerEntry[]
+
+  @@index([ownerId, status])
+  @@index([shirtId])
+  @@map("payments")
+}
+
+model PaymentEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  paymentId  String   @db.Uuid
+  eventType  String
+  rawPayload Json
+  receivedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, receivedAt])
+  @@map("payment_events")
+}
+
+model SigningEntitlement {
+  id        String                   @id @default(uuid()) @db.Uuid
+  paymentId String                   @db.Uuid
+  shirtId   String                   @db.Uuid
+  status    SigningEntitlementStatus @default(AVAILABLE)
+  expiresAt DateTime?
+  createdAt DateTime                 @default(now())
+  usedAt    DateTime?
+
+  payment   Payment    @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  shirt     Shirt      @relation(fields: [shirtId], references: [id], onDelete: Cascade)
+  signature Signature?
+
+  @@unique([paymentId])
+  @@index([shirtId, status])
+  @@map("signing_entitlements")
+}
+
+model Signature {
+  id            String                    @id @default(uuid()) @db.Uuid
+  shirtId       String                    @db.Uuid
+  paymentId     String                    @db.Uuid
+  entitlementId String                    @unique @db.Uuid
+  assetKey      String
+  surfaceId     String
+  uvX           Float
+  uvY           Float
+  width         Float
+  height        Float
+  rotation      Float
+  scale         Float
+  submittedAt   DateTime                  @default(now())
+  visibility    SignatureVisibilityStatus @default(VISIBLE)
+
+  shirt       Shirt              @relation(fields: [shirtId], references: [id], onDelete: Cascade)
+  payment     Payment            @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  entitlement SigningEntitlement @relation(fields: [entitlementId], references: [id], onDelete: Cascade)
+
+  @@index([shirtId, submittedAt])
+  @@map("signatures")
+}
+
+model LedgerEntry {
+  id              String          @id @default(uuid()) @db.Uuid
+  ownerId         String?         @db.Uuid
+  paymentId       String?         @db.Uuid
+  withdrawalId    String?         @db.Uuid
+  entryType       LedgerEntryType
+  amountKobo      Int
+  description     String?
+  sourceReference String?
+  createdAt       DateTime        @default(now())
+
+  payment    Payment?    @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  withdrawal Withdrawal? @relation(fields: [withdrawalId], references: [id], onDelete: SetNull)
+
+  @@index([ownerId, createdAt])
+  @@index([paymentId])
+  @@index([withdrawalId])
+  @@map("ledger_entries")
+}
+
+model Withdrawal {
+  id                String           @id @default(uuid()) @db.Uuid
+  userId            String           @db.Uuid
+  amountKobo        Int
+  status            WithdrawalStatus @default(PENDING)
+  transferReference String?
+  failureReason     String?
+  requestedAt       DateTime         @default(now())
+  processedAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  ownerProfile  OwnerProfile  @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  ledgerEntries LedgerEntry[]
+
+  @@index([userId, status])
+  @@map("withdrawals")
+}

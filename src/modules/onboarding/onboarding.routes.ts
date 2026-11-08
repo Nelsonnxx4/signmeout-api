@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { parseOrThrow } from "../../lib/http-error.js";
 import {
@@ -16,8 +16,7 @@ import {
 export const onboardingRouter = Router();
 onboardingRouter.use("/onboarding", requireAuth);
 
-const uid = (req: Express.Request) =>
-	(req as import("express").Request).auth!.user.id;
+const uid = (req: Request) => req.auth!.user.id;
 
 onboardingRouter.get("/onboarding/status", async (req, res) => {
 	res.json({ success: true, data: await getStatus(uid(req)) });

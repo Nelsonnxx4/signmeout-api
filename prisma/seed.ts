@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { seedSchools } from "./seed/schools.js";
-// inside your main seed function:
+import { seedShirtModels } from "./seed/shirt-models.js";
 import {
 	COMMISSION_POLICY_VERSION,
 	OWNER_ALLOCATION_BASIS_POINTS,
@@ -23,6 +23,9 @@ const seed = async () => {
 			effectiveAt: new Date("2026-11-08T00:00:00.000Z"),
 		},
 	});
+
+	await seedSchools(prisma);
+	await seedShirtModels(prisma);
 };
 
 seed()
@@ -34,5 +37,3 @@ seed()
 		await prisma.$disconnect();
 		process.exitCode = 1;
 	});
-
-await seedSchools(prisma);

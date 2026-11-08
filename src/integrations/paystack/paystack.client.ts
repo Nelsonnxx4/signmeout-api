@@ -1,4 +1,4 @@
-import { env } from "../../config/env.js"; // ADAPT: needs PAYSTACK_SECRET_KEY
+import { env } from "../../config/env.js";
 
 const BASE_URL = "https://api.paystack.co";
 const TIMEOUT_MS = 10_000;
@@ -37,7 +37,7 @@ async function request<T>(
 		res = await fetch(`${BASE_URL}${path}`, {
 			...init,
 			headers: {
-				Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`,
+				Authorization: `Bearer ${env.paystackSecretKey}`,
 				"Content-Type": "application/json",
 				...init.headers,
 			},
