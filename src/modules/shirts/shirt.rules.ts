@@ -64,7 +64,6 @@ export function toPublicShirt(row: PublicShirtSource) {
 export function toPublicSignature(row: PublicSignatureSource) {
 	return {
 		id: row.id,
-		assetKey: row.assetKey,
 		surfaceId: row.surfaceId,
 		position: {
 			x: row.uvX,

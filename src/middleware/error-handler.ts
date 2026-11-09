@@ -18,7 +18,24 @@ export const errorHandler: ErrorRequestHandler = (
       error: {
         code: "VALIDATION_ERROR",
         message: "The request contains invalid data",
-        details: error.issues,
+        details: error.issues.map(({ path, code, message }) => ({
+          path,
+          code,
+          message,
+        })),
+      },
+      requestId: response.locals.requestId,
+    });
+    return;
+  }
+
+  if (error instanceof HttpError) {
+    response.status(error.status).json({
+      success: false,
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.details === undefined ? {} : { details: error.details }),
       },
       requestId: response.locals.requestId,
     });
@@ -62,4 +79,3 @@ export const errorHandler: ErrorRequestHandler = (
     requestId: response.locals.requestId,
   });
 };
-

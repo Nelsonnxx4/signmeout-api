@@ -126,6 +126,52 @@ export async function createTransferRecipient(input: {
   return res.data.recipient_code;
 }
 
+export interface PaystackTransfer {
+  reference: string;
+  status: string;
+  transfer_code?: string;
+  amount?: number;
+  currency?: string;
+  recipient?: { recipient_code?: string };
+}
+
+export async function initiateTransfer(input: {
+  amount: number;
+  recipientCode: string;
+  reference: string;
+  reason: string;
+}) {
+  const res = await request<PaystackTransfer>("/transfer", {
+    method: "POST",
+    body: JSON.stringify({
+      source: "balance",
+      amount: input.amount,
+      recipient: input.recipientCode,
+      reference: input.reference,
+      reason: input.reason,
+    }),
+  });
+  return res.data;
+}
+
+export async function verifyTransfer(reference: string) {
+  const res = await request<PaystackTransfer>(
+    `/transfer/verify/${encodeURIComponent(reference)}`,
+  );
+  return res.data;
+}
+
+export async function verifyTransaction(reference: string) {
+  const res = await request<{
+    reference: string;
+    status: string;
+    amount: number;
+    currency: string;
+    id?: number | string;
+  }>(`/transaction/verify/${encodeURIComponent(reference)}`);
+  return res.data;
+}
+
 export async function initializeTransaction(input: {
   email: string;
   amount: number;

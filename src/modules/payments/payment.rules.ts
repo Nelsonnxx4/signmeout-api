@@ -2,6 +2,7 @@ import { z } from "zod";
 import { calculatePaymentAllocation } from "./payment-allocation.service.js";
 
 export const MIN_GIFT_KOBO = 200_000;
+export const MAX_PAYMENT_KOBO = 2_147_483_647;
 export const SIGNATURE_SIZE_FEES_KOBO = {
   1: 0,
   2: 50_000,
@@ -10,7 +11,7 @@ export const SIGNATURE_SIZE_FEES_KOBO = {
 } as const;
 
 export const checkoutSchema = z.object({
-  giftAmountKobo: z.number().int().positive().min(MIN_GIFT_KOBO),
+  giftAmountKobo: z.number().int().positive().min(MIN_GIFT_KOBO).max(MAX_PAYMENT_KOBO - 100_000),
   signatureSize: z
     .number()
     .int()
@@ -50,6 +51,9 @@ export function calculateCheckoutTotals(giftAmountKobo: number, signatureSize = 
 
   const enlargementFeeKobo = getSignatureFeeKobo(size);
   const grossAmountKobo = giftAmountKobo + enlargementFeeKobo;
+  if (!Number.isSafeInteger(grossAmountKobo) || grossAmountKobo > MAX_PAYMENT_KOBO) {
+    throw new RangeError("grossAmountKobo exceeds the supported financial range");
+  }
   return {
     ...calculatePaymentAllocation(grossAmountKobo),
     enlargementFeeKobo,

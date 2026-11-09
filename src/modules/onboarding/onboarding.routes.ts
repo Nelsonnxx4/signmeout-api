@@ -5,12 +5,16 @@ import {
 	bankSchema,
 	commissionSchema,
 	profileSchema,
+	studentDocumentUploadSchema,
+	studentVerificationSchema,
 } from "./onboarding.schema.js";
 import {
 	acceptCommission,
 	getStatus,
 	saveBank,
 	saveProfile,
+	createStudentDocumentUpload,
+	submitStudentVerification,
 } from "./onboarding.service.js";
 
 export const onboardingRouter = Router();
@@ -26,6 +30,22 @@ onboardingRouter.patch("/onboarding/profile", async (req, res) => {
 	res.json({
 		success: true,
 		data: await saveProfile(uid(req), parseOrThrow(profileSchema, req.body)),
+	});
+});
+
+onboardingRouter.post("/onboarding/student-verification/upload", async (req, res) => {
+	const { contentType, sizeBytes } = parseOrThrow(studentDocumentUploadSchema, req.body);
+	res.json({
+		success: true,
+		data: await createStudentDocumentUpload(uid(req), contentType, sizeBytes),
+	});
+});
+
+onboardingRouter.post("/onboarding/student-verification", async (req, res) => {
+	const input = parseOrThrow(studentVerificationSchema, req.body);
+	res.status(201).json({
+		success: true,
+		data: await submitStudentVerification(uid(req), input),
 	});
 });
 

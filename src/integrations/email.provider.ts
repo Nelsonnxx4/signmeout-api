@@ -1,33 +1,62 @@
+import { env } from "../config/env.js";
+
 export interface EmailMessage {
-	to: string;
-	subject: string;
-	text: string;
-	html?: string;
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  idempotencyKey?: string;
 }
 
-/** Swap implementations (Resend, Postmark, SES...) without touching auth code. */
 export interface EmailProvider {
-	send(message: EmailMessage): Promise<void>;
+  send(message: EmailMessage): Promise<void>;
 }
 
-/** Dev-only provider: prints the email so you can click verification/reset links. */
 export class ConsoleEmailProvider implements EmailProvider {
-	async send(message: EmailMessage): Promise<void> {
-		console.info(
-			`\n--- EMAIL to ${message.to} ---\n${message.subject}\n${message.text}\n`,
-		);
-	}
+  async send(message: EmailMessage): Promise<void> {
+    console.info(
+      `\n--- EMAIL to ${message.to} ---\n${message.subject}\n${message.text}\n`,
+    );
+  }
 }
 
-class UnconfiguredEmailProvider implements EmailProvider {
-	async send(): Promise<void> {
-		throw new Error(
-			"No email provider configured. Implement EmailProvider and register it in email.provider.ts.",
-		);
-	}
+export class ResendEmailProvider implements EmailProvider {
+  constructor(
+    private readonly apiKey: string,
+    private readonly from: string,
+  ) {}
+
+  async send(message: EmailMessage): Promise<void> {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+        ...(message.idempotencyKey
+          ? { "Idempotency-Key": message.idempotencyKey }
+          : {}),
+      },
+      body: JSON.stringify({
+        from: this.from,
+        to: [message.to],
+        subject: message.subject,
+        text: message.text,
+        ...(message.html ? { html: message.html } : {}),
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Resend email delivery failed with HTTP ${response.status}.`);
+    }
+  }
+}
+
+if (env.nodeEnv === "production" && (!env.resendApiKey || !env.emailFrom)) {
+  throw new Error("RESEND_API_KEY and EMAIL_FROM are required in production.");
 }
 
 export const emailProvider: EmailProvider =
-	process.env.NODE_ENV === "production"
-		? new UnconfiguredEmailProvider()
-		: new ConsoleEmailProvider();
+  env.nodeEnv === "production"
+    ? new ResendEmailProvider(env.resendApiKey!, env.emailFrom!)
+    : new ConsoleEmailProvider();

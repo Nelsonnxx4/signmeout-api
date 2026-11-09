@@ -11,6 +11,9 @@ describe("calculateCheckoutTotals", () => {
     expect(totals.grossAmountKobo).toBe(600_000);
     expect(totals.ownerAmountKobo).toBe(510_000);
     expect(totals.platformAmountKobo).toBe(90_000);
+    expect(totals.ownerBasisPoints).toBe(8_500);
+    expect(totals.platformBasisPoints).toBe(1_500);
+    expect(totals.commissionPolicyVersion).toBe("2026-11-08-15pct-v1");
   });
 
   it("rejects invalid size upgrades for a small gift", () => {

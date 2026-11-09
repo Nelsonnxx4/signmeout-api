@@ -7,19 +7,21 @@ export const COMMISSION_POLICY = {
 	platformPaysFees: true,
 } as const;
 
-export type OnboardingStep = "profile" | "bank" | "commission";
+export type OnboardingStep = "profile" | "studentVerification" | "bank" | "commission";
 
 export function deriveOnboardingStatus(input: {
 	hasProfile: boolean;
+	hasStudentVerification: boolean;
 	hasBank: boolean;
 	acceptedCurrentPolicy: boolean;
 }) {
 	const steps = {
 		profile: input.hasProfile,
+		studentVerification: input.hasStudentVerification,
 		bank: input.hasBank,
 		commission: input.acceptedCurrentPolicy,
 	};
-	const order: OnboardingStep[] = ["profile", "bank", "commission"];
+	const order: OnboardingStep[] = ["profile", "studentVerification", "bank", "commission"];
 	const nextStep = order.find((s) => !steps[s]) ?? null;
 	return { steps, completed: nextStep === null, nextStep };
 }

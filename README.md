@@ -11,6 +11,7 @@ university students in Nigeria.
 - Pino structured logging with sensitive-field redaction
 - Helmet, CORS, rate limiting, request IDs, and consistent errors
 - Health endpoint at `GET /api/v1/health`
+- Better Auth email OTP and Google OAuth authentication
 - Versioned commission policy and integer-kobo allocation service
 - Vitest unit and integration tests
 
@@ -38,7 +39,92 @@ npm run dev
 
 Update `DATABASE_URL` in `.env` if your local PostgreSQL credentials differ
 from the example. Paystack and Better Auth secrets are not needed for the
-current foundation, but will be required when those modules are implemented.
+development foundation. Email OTP messages are printed by the development email
+provider. Configure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to enable
+Google sign-in. Production requires `BETTER_AUTH_SECRET`, Google OAuth
+credentials, and a configured email provider. Register this Google OAuth
+callback URL with Google:
+`http://localhost:5000/api/v1/auth/callback/google` (replace the host in
+production).
+
+The database seed loads the configured university list and the 10 supported
+department choices. The bank dropdown uses the configured catalog in
+`src/modules/banks/bank.service.ts`; account-name resolution still goes through
+Paystack. When changing a bank code, confirm it matches Paystack's current
+account-resolution code for that institution.
+
+## Withdrawal request alerts
+
+Withdrawal eligibility requires completed onboarding, a Paystack-resolved bank
+account, an automatically approved onboarding student-verification
+submission, and enough available ledger balance. The destination bank details are
+snapshotted with each request so later bank-account edits cannot redirect an
+already-requested payout.
+
+Each request reserves its balance, creates a durable notification job, and
+sets an admin response target 10 minutes after submission. The worker retries
+email and webhook delivery independently. If the admin does not act by the
+target, the request remains pending and the funds remain reserved; the user
+may cancel before transfer processing starts. The 10-minute target is not a
+guarantee that a bank will settle the transfer within 10 minutes. A payout
+still requires an admin to start the Paystack transfer, and Paystack/bank
+processing can take longer.
+
+Configure both delivery channels:
+
+- `ADMIN_ALERT_EMAIL` is the recipient for withdrawal emails.
+- `RESEND_API_KEY` and `EMAIL_FROM` configure the Resend email provider used
+  for both sign-in OTPs and withdrawal notifications.
+- `ADMIN_ALERT_WEBHOOK_URL` is called with a JSON `withdrawal.requested`
+  event. `ADMIN_ALERT_WEBHOOK_SECRET` signs
+  `${timestamp}.${rawBody}` with HMAC-SHA256. The request includes
+  `X-SignMeOut-Timestamp`, `X-SignMeOut-Signature: sha256=<hex>`, and an
+  `Idempotency-Key` header. Verify the signature and reject stale timestamps
+  in the receiving service.
+
+Both alerts contain the contributor's full bank account number as configured.
+Restrict mailbox and webhook access, retain payloads only as long as needed,
+and never log the raw alert body.
+
+Onboarding student verification accepts either a full name and admission
+number (with an optional nickname), or one uploaded student ID/admission
+letter. Request an upload URL from
+`POST /api/v1/onboarding/student-verification/upload` with `contentType` and
+`sizeBytes`, PUT the file to the signed URL, then submit either the details or
+the returned `assetKey` plus `originalName` and `documentType` to
+`POST /api/v1/onboarding/student-verification`. Supported documents are
+PNG/JPEG/WebP/PDF up to 10 MB. Submission is automatically marked approved
+and is required to complete onboarding and request withdrawals. This is
+self-attestation only: the API validates file type/integrity but does not
+authenticate the student or verify document contents.
+
+Signature uploads require a private Cloudflare R2 bucket configured with
+`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and
+`R2_BUCKET_NAME`. Configure the bucket CORS policy to permit the frontend
+origin to `PUT` the signed upload URL with the returned `Content-Type` and
+`x-amz-meta-entitlement` or `x-amz-meta-owner` headers. The backend validates and re-encodes the
+uploaded PNG/JPEG/WebP before making it available.
+Configure an R2 lifecycle rule to delete abandoned objects under the
+`signature-uploads/` and `verification-uploads/` prefixes after 24 hours.
+Validated student documents are moved to the private `student-verifications/`
+prefix and must not be included in that temporary-upload lifecycle rule.
+
+Every `ShirtModelVersion` needs an administrator-supplied `placementConfig`
+before signing is enabled. Set it with
+`PUT /api/v1/admin/shirt-models/:id/placement-config`; the configuration
+contains a version and normalized UV bounds, restricted regions, and maximum
+signature dimensions for each surface. Missing configuration intentionally
+fails closed rather than guessing shirt geometry.
+
+Paystack transfer initiation is disabled by default. Keep
+`PAYSTACK_TRANSFERS_ENABLED=false` until Paystack and compliance approvals are
+recorded. When approved, configure the Paystack secret and explicitly set this
+flag to `true`. Admin transfer initiation and reconciliation are exposed at
+`POST /api/v1/admin/withdrawals/:id/transfer` and
+`POST /api/v1/admin/withdrawals/:id/reconcile`; confirmed statuses are also
+processed through the signed Paystack webhook. A contributor may cancel a
+withdrawal through `POST /api/v1/withdrawals/:id/cancel` only before transfer
+processing begins; that operation atomically releases the reserved balance.
 
 ## Verification
 
@@ -50,4 +136,3 @@ npm run build
 ```
 
 The product requirements and delivery roadmap are documented in [PRD.md](./PRD.md).
-

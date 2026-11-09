@@ -184,7 +184,7 @@ export async function listPublicSignatures(slug: string) {
 		select: {
 			status: true,
 			signatures: {
-				where: { visibility: { not: "HIDDEN" } },
+				where: { visibility: "VISIBLE" },
 				orderBy: { submittedAt: "asc" },
 				select: {
 					id: true,
@@ -206,5 +206,8 @@ export async function listPublicSignatures(slug: string) {
 	if (!row || row.status === "ARCHIVED")
 		throw new HttpError(404, "SHIRT_NOT_FOUND", "Shirt not found.");
 
-	return row.signatures.map(toPublicSignature);
+	return row.signatures.map((signature) => ({
+		...toPublicSignature(signature),
+		assetUrl: `${env.betterAuthUrl}/api/v1/public/signatures/${signature.id}/asset`,
+	}));
 }

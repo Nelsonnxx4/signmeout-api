@@ -26,6 +26,19 @@ export type ProfileInput = z.infer<typeof profileSchema>;
 
 export const bankSchema = resolveAccountSchema;
 
+export const studentDocumentUploadSchema = z.object({
+	contentType: z.enum(["image/png", "image/jpeg", "image/webp", "application/pdf"]),
+	sizeBytes: z.number().int().positive().max(10 * 1024 * 1024),
+});
+
+export const studentVerificationSchema = z
+	.object({
+		fullName: z.string().trim().min(2).max(150),
+		admissionNumber: z.string().trim().min(2).max(64),
+		nickname: z.string().trim().min(1).max(60).optional(),
+	});
+export type StudentVerificationInput = z.infer<typeof studentVerificationSchema>;
+
 export const commissionSchema = z.object({
 	accepted: z.literal(true, {
 		error: "You must accept the commission terms to continue.",

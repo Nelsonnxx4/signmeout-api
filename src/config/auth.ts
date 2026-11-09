@@ -1,17 +1,11 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { emailOTP } from "better-auth/plugins";
 import { prisma } from "./database.js";
 import { env } from "./env.js";
 import { emailProvider } from "../integrations/email.provider.js";
 
 const isProd = env.nodeEnv === "production";
-
-/** Fire-and-forget so response timing can't reveal whether an email exists. */
-function sendInBackground(to: string, subject: string, text: string) {
-  void emailProvider.send({ to, subject, text }).catch((err) => {
-    console.error("Email send failed", { subject, err });
-  });
-}
 
 export const auth = betterAuth({
   appName: "SignMeOut",
@@ -22,33 +16,17 @@ export const auth = betterAuth({
 
   database: prismaAdapter(prisma, { provider: "postgresql" }),
 
-  emailAndPassword: {
-    enabled: true,
-    minPasswordLength: 8,
-    maxPasswordLength: 128,
-    requireEmailVerification: true,
-    resetPasswordTokenExpiresIn: 60 * 60, // 1 hour
-    revokeSessionsOnPasswordReset: true,
-    sendResetPassword: async ({ user, url }) => {
-      sendInBackground(
-        user.email,
-        "Reset your SignMeOut password",
-        `Hi ${user.name},\n\nReset your password (link valid for 1 hour):\n${url}\n\nIf you didn't request this, ignore this email.`,
-      );
-    },
-  },
+  emailAndPassword: { enabled: false },
 
-  emailVerification: {
-    sendOnSignUp: true,
-    autoSignInAfterVerification: true,
-    sendVerificationEmail: async ({ user, url }) => {
-      sendInBackground(
-        user.email,
-        "Verify your SignMeOut email",
-        `Hi ${user.name},\n\nConfirm your email to finish creating your account:\n${url}`,
-      );
-    },
-  },
+  socialProviders:
+    env.googleClientId && env.googleClientSecret
+      ? {
+          google: {
+            clientId: env.googleClientId,
+            clientSecret: env.googleClientSecret,
+          },
+        }
+      : {},
 
   user: {
     additionalFields: {
@@ -68,12 +46,29 @@ export const auth = betterAuth({
     window: 60,
     max: 100,
     customRules: {
-      "/sign-in/email": { window: 60, max: 5 },
-      "/sign-up/email": { window: 60, max: 5 },
-      "/request-password-reset": { window: 60, max: 3 },
-      "/send-verification-email": { window: 60, max: 3 },
+      "/email-otp/send-verification-otp": { window: 60, max: 3 },
+      "/sign-in/email-otp": { window: 60, max: 5 },
     },
   },
+
+  plugins: [
+    emailOTP({
+      otpLength: 6,
+      expiresIn: 300,
+      allowedAttempts: 5,
+      storeOTP: "hashed",
+      disableSignUp: false,
+      overrideDefaultEmailVerification: true,
+      rateLimit: { window: 60, max: 3 },
+      sendVerificationOTP: async ({ email, otp }) => {
+        await emailProvider.send({
+          to: email,
+          subject: "Your SignMeOut sign-in code",
+          text: `Your SignMeOut verification code is ${otp}. It expires in 5 minutes. If you did not request this code, you can ignore this email.`,
+        });
+      },
+    }),
+  ],
 
   advanced: {
     useSecureCookies: isProd,

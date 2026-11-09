@@ -19,7 +19,11 @@ export function parseOrThrow<T>(schema: ZodType<T>, data: unknown): T {
 			400,
 			"VALIDATION_ERROR",
 			"Invalid request.",
-			result.error.issues,
+			result.error.issues.map(({ path, code, message }) => ({
+				path,
+				code,
+				message,
+			})),
 		);
 	}
 	return result.data;

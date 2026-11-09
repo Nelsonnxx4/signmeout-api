@@ -29,7 +29,11 @@ SignMeOut earns 15% of every successful contribution, while the shirt owner rece
 
 The platform bears payment-processing and transfer fees from its commission.
 
-Before withdrawing earnings, students must complete identity verification.
+Onboarding collects student identity details or a private student document.
+Submission is automatically marked approved; this is a self-attestation flow,
+not independent proof of student status. Withdrawals require completed
+onboarding, a Paystack-resolved payout account, a submitted verification, and
+sufficient available balance.
 
 ### Backend responsibilities
 
@@ -147,12 +151,11 @@ Use Better Auth with PostgreSQL and Prisma.
 
 ### 4.2 Required features
 
-- Email/password registration.
-- Secure password hashing.
+- Passwordless email OTP sign-up and sign-in.
+- Google OAuth sign-in.
+- OTP expiration, resend limits, and attempt limits.
 - Login and logout.
 - Session management.
-- Email verification.
-- Forgot-password and reset-password workflows.
 - Protected owner endpoints.
 - Role-based administrator authorization.
 - Session expiration and revocation.
@@ -339,6 +342,7 @@ Store:
 - Width and height.
 - Rotation.
 - Authorized scale.
+- Maximum signature scale paid for at checkout.
 - Submission timestamp.
 - Visibility status.
 
@@ -382,6 +386,13 @@ Use controlled uploads and validate:
 - Ownership of the signing entitlement.
 
 Avoid accepting arbitrary executable SVG or untrusted HTML content.
+
+Issue short-lived, entitlement-scoped upload URLs. Validate uploaded file bytes,
+dimensions, format, and entitlement metadata server-side; normalize accepted
+images before persisting a canonical private asset. Public signature assets are
+served through short-lived signed reads, never by exposing storage keys.
+Signing placement remains unavailable until an administrator configures the
+versioned model surfaces, bounds, restricted regions, and maximum dimensions.
 
 ---
 
@@ -462,7 +473,10 @@ A successful payment must never create:
 - Multiple platform revenue credits.
 - Multiple signing entitlements.
 
-Enforce uniqueness at the database level.
+Process payment status transitions atomically from `PENDING` and enforce unique
+ledger idempotency keys at the database level. Store the selected signature
+size, allocation basis points, and commission policy version with the payment so
+later signing requests and financial reviews can verify the paid entitlement.
 
 ### 8.7 Payment recovery
 
@@ -545,16 +559,22 @@ The ledger must distinguish recorded owner liabilities from money actually avail
 
 ### 10.1 Purpose
 
-Owners must verify their student status before requesting withdrawals.
+Collect either the student's full name and admission number (with optional
+nickname), or one student ID/admission letter. Submission is automatically
+marked approved to satisfy onboarding and withdrawal eligibility; the backend
+does not validate the authenticity of the identity details or document.
+Additional identity checks required by Paystack or applicable law remain
+subject to provider and legal review.
 
 ### 10.2 Verification requirements
 
-Collect approved evidence, such as:
+The onboarding submission accepts either personal details or one of:
 
 - Student identification card.
-- Another acceptable institution-issued document.
+- Admission letter.
 
-Additional identity requirements may be imposed by the payment provider or applicable law.
+The upload must be private, type-checked, and size-limited. File validation
+does not prove the document is genuine.
 
 ### 10.3 Verification states
 
@@ -566,23 +586,20 @@ Additional identity requirements may be imposed by the payment provider or appli
 
 ### 10.4 Verification process
 
-1. Owner submits evidence.
-2. Backend validates the upload.
-3. Document is stored privately.
-4. Verification request enters the review queue.
-5. Administrator reviews the evidence.
-6. Administrator approves, rejects, or requests resubmission.
-7. Backend records the decision and reviewer.
-8. Owner receives a status notification.
+1. Owner submits full name/admission number (optional nickname), or obtains
+   an upload URL and uploads a student ID/admission letter.
+2. Backend validates the fields or file and stores documents privately.
+3. Backend marks the submission approved and completes the onboarding step.
+4. The approved submission enables withdrawal eligibility.
 
 ### 10.5 Security
 
-- Private document storage.
-- Restricted administrator access.
-- Signed document access URLs.
-- Audit logging.
-- File validation and scanning.
+- Private document storage with account-scoped, short-lived upload URLs.
+- Server-side document MIME/signature/size validation.
+- Do not expose private storage keys in public APIs.
 - Defined document retention periods.
+- Auto-approval is only completion of the self-attestation step; it must not be
+  represented as independent identity or document verification.
 - Compliance with applicable Nigerian data protection requirements.
 
 ---
@@ -595,7 +612,7 @@ An owner can request withdrawal only when:
 
 - Authenticated.
 - Onboarding is complete.
-- Student verification is approved.
+- Onboarding student verification has been submitted.
 - Bank account is validated.
 - Sufficient available balance exists.
 - No applicable withdrawal restriction exists.
@@ -604,14 +621,25 @@ An owner can request withdrawal only when:
 
 1. Owner requests withdrawal.
 2. Backend validates eligibility.
-3. Backend locks the relevant financial records.
+3. Backend requires an idempotency key and serializes balance reservation.
 4. Available balance is calculated.
 5. Requested funds are reserved.
 6. Withdrawal record is created.
-7. Transfer is initiated through the approved payout arrangement.
-8. Transfer status is monitored.
-9. Final status is reconciled.
-10. Ledger is updated accordingly.
+7. A durable alert is queued for delivery to the configured administrator by
+   email and signed webhook, including the full payout account number.
+8. The request includes an administrator response target 10 minutes after
+   submission. This target is not a guarantee of bank settlement within that
+   period.
+9. The administrator initiates the transfer through the approved payout
+   arrangement.
+10. Transfer status is monitored and reconciled with Paystack.
+11. The ledger is updated only after the provider's final status is confirmed.
+
+If no administrator acts by the 10-minute response target, the request remains
+pending and its funds remain reserved. The owner can cancel before transfer
+processing begins; cancellation releases the reserved funds atomically.
+Payout account details are snapshotted on the withdrawal so later bank-account
+changes cannot redirect an existing request.
 
 ### 11.3 Withdrawal statuses
 
@@ -631,6 +659,8 @@ An owner can request withdrawal only when:
 - Release reserved funds only after confirmed failure or reversal.
 - Maintain an audit trail for each state change.
 - Use unique transfer references and idempotency keys.
+- Keep transfer initiation disabled until payment-provider and compliance
+  approvals are recorded.
 
 ### 11.5 Provider dependency
 
@@ -769,6 +799,7 @@ Use a provider abstraction so email services can be replaced later.
 - Unique Paystack payment reference.
 - Unique signing entitlement per payment.
 - Unique signature per signing entitlement.
+- Unique ledger idempotency key.
 - Unique withdrawal idempotency key.
 - Unique provider transfer reference.
 - Appropriate foreign keys and indexes.
@@ -787,6 +818,8 @@ Base URL:
 ### Authentication
 
 Authentication routes will be provided by Better Auth under its configured mount path.
+Email OTP sign-in may create a new owner account after the code is verified.
+Google OAuth credentials must be configured outside source control.
 
 ### Owner and onboarding
 
@@ -799,6 +832,8 @@ Authentication routes will be provided by Better Auth under its configured mount
 | GET    | `/banks`                   |
 | POST   | `/banks/resolve`           |
 | PATCH  | `/onboarding/profile`      |
+| POST   | `/onboarding/student-verification/upload` |
+| POST   | `/onboarding/student-verification` |
 | POST   | `/onboarding/bank`         |
 | POST   | `/onboarding/commission`   |
 | GET    | `/onboarding/status`       |
@@ -830,6 +865,7 @@ Authentication routes will be provided by Better Auth under its configured mount
 | POST   | `/signing/assets`                 |
 | POST   | `/signatures`                     |
 | GET    | `/public/shirts/:slug/signatures` |
+| GET    | `/public/signatures/:id/asset`    |
 
 ### Dashboard and earnings
 
@@ -848,6 +884,7 @@ Authentication routes will be provided by Better Auth under its configured mount
 | POST   | `/withdrawals`          |
 | GET    | `/withdrawals`          |
 | GET    | `/withdrawals/:id`      |
+| POST   | `/withdrawals/:id/cancel` |
 
 ### Administration
 
@@ -858,6 +895,9 @@ Authentication routes will be provided by Better Auth under its configured mount
 | GET    | `/admin/payments`          |
 | GET    | `/admin/withdrawals`       |
 | GET    | `/admin/audit-logs`        |
+| PUT    | `/admin/shirt-models/:id/placement-config` |
+| POST   | `/admin/withdrawals/:id/transfer` |
+| POST   | `/admin/withdrawals/:id/reconcile` |
 
 ### API response conventions
 
@@ -1250,7 +1290,10 @@ The backend MVP is complete when:
 - Contributors receive one signing entitlement per successful payment.
 - Signatures are securely stored and correctly associated with shirt surfaces.
 - Owners can view accurate earnings and transaction histories.
-- Student verification is required before withdrawal.
+- Withdrawal requests require a submitted onboarding student verification;
+  submission is auto-approved and is not independently authenticated.
+- Each withdrawal reserves funds, snapshots payout details, and queues email
+  and signed-webhook administrator alerts with a 10-minute response target.
 - Authorized administrators can review verification requests.
 - Withdrawals cannot exceed available balances.
 - Transfers are reconciled without duplicate payouts.

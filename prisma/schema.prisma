@@ -32,6 +32,11 @@ enum VerificationStatus {
   REQUIRES_RESUBMISSION
 }
 
+enum VerificationDocumentType {
+  STUDENT_ID
+  ADMISSION_LETTER
+}
+
 enum ShirtType {
   SHORT_SLEEVE
   LONG_SLEEVE
@@ -73,6 +78,7 @@ enum LedgerEntryType {
   WITHDRAWAL_HOLD
   WITHDRAWAL_RELEASE
   WITHDRAWAL_COMPLETED
+  WITHDRAWAL_REVERSAL
   TRANSFER_FEE
   REFUND_ADJUSTMENT
   CHARGEBACK_ADJUSTMENT
@@ -116,6 +122,7 @@ model User {
   accounts              Account[]
   ownerProfile          OwnerProfile?
   reviewedVerifications StudentVerification[] @relation("VerificationReviewedBy")
+  adminAuditLogs        AdminAuditLog[]
 
   @@map("users")
 }
@@ -263,6 +270,9 @@ model CommissionAcceptance {
 model StudentVerification {
   id               String             @id @default(uuid()) @db.Uuid
   userId           String             @db.Uuid
+  fullName         String?
+  admissionNumber  String?
+  nickname         String?
   status           VerificationStatus @default(PENDING)
   submittedAt      DateTime           @default(now())
   reviewedAt       DateTime?
@@ -284,6 +294,7 @@ model VerificationDocument {
   verificationId String   @db.Uuid
   originalName   String
   storageKey     String
+  documentType    VerificationDocumentType?
   mimeType       String
   sizeBytes      Int
   checksumSha256 String?
@@ -300,6 +311,7 @@ model ShirtModelVersion {
   shirtType ShirtType
   version   Int
   modelKey  String
+  placementConfig Json?
   isCurrent Boolean   @default(false)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -347,6 +359,9 @@ model Payment {
   grossAmountKobo       Int
   ownerAmountKobo       Int
   platformAmountKobo    Int
+  ownerBasisPoints      Int           @default(8500)
+  platformBasisPoints   Int           @default(1500)
+  commissionPolicyVersion String      @default("2026-11-08-15pct-v1")
   status                PaymentStatus @default(PENDING)
   paidAt                DateTime?
   createdAt             DateTime      @default(now())
@@ -446,16 +461,75 @@ model Withdrawal {
   userId            String           @db.Uuid
   amountKobo        Int
   status            WithdrawalStatus @default(PENDING)
-  transferReference String?
+  bankCode          String
+  bankName          String
+  accountNumber     String
+  accountName       String
+  paystackRecipient String?
+  idempotencyKey    String           @unique
+  transferReference String?          @unique
   failureReason     String?
   requestedAt       DateTime         @default(now())
+  adminResponseDeadline DateTime
   processedAt       DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
   ownerProfile  OwnerProfile  @relation(fields: [userId], references: [userId], onDelete: Cascade)
   ledgerEntries LedgerEntry[]
+  events        WithdrawalEvent[]
+  alert         WithdrawalAlert?
 
   @@index([userId, status])
   @@map("withdrawals")
+}
+
+model WithdrawalAlert {
+  id              String    @id @default(uuid()) @db.Uuid
+  withdrawalId    String    @unique @db.Uuid
+  emailSentAt     DateTime?
+  webhookSentAt   DateTime?
+  emailAttempts   Int       @default(0)
+  webhookAttempts Int       @default(0)
+  emailLastError  String?
+  webhookLastError String?
+  nextAttemptAt   DateTime  @default(now())
+  lockedUntil     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  withdrawal Withdrawal @relation(fields: [withdrawalId], references: [id], onDelete: Cascade)
+
+  @@index([nextAttemptAt, lockedUntil])
+  @@map("withdrawal_alerts")
+}
+
+model WithdrawalEvent {
+  id               String   @id @default(uuid()) @db.Uuid
+  withdrawalId     String   @db.Uuid
+  eventType        String
+  providerReference String
+  rawPayload       Json
+  receivedAt       DateTime @default(now())
+
+  withdrawal Withdrawal @relation(fields: [withdrawalId], references: [id], onDelete: Cascade)
+
+  @@index([withdrawalId, receivedAt])
+  @@map("withdrawal_events")
+}
+
+model AdminAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  adminUserId  String   @db.Uuid
+  action       String   @db.VarChar(100)
+  resourceType String   @db.VarChar(100)
+  resourceId   String?  @db.VarChar(255)
+  details      Json?
+  createdAt    DateTime @default(now())
+
+  admin User @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
+
+  @@index([adminUserId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("admin_audit_logs")
 }

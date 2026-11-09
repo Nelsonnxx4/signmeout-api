@@ -98,25 +98,41 @@ export async function reviewVerification(
   status: "APPROVED" | "REJECTED" | "REQUIRES_RESUBMISSION",
   reviewReason?: string,
 ) {
-  const verification = await prisma.studentVerification.findUnique({
-    where: { id: verificationId },
+  return prisma.$transaction(async (tx) => {
+    const verification = await tx.studentVerification.findUnique({
+      where: { id: verificationId },
+    });
+
+    if (!verification) {
+      throw new HttpError(404, "VERIFICATION_NOT_FOUND", "Verification request not found.");
+    }
+
+    const updated = await tx.studentVerification.update({
+      where: { id: verificationId },
+      data: {
+        status,
+        reviewReason: reviewReason ?? null,
+        reviewedAt: new Date(),
+        reviewedByUserId: adminUserId,
+      },
+    });
+
+    await tx.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action: "verification.reviewed",
+        resourceType: "student_verification",
+        resourceId: verificationId,
+        details: {
+          fromStatus: verification.status,
+          toStatus: status,
+          reasonProvided: Boolean(reviewReason),
+        },
+      },
+    });
+
+    return updated;
   });
-
-  if (!verification) {
-    throw new HttpError(404, "VERIFICATION_NOT_FOUND", "Verification request not found.");
-  }
-
-  const updated = await prisma.studentVerification.update({
-    where: { id: verificationId },
-    data: {
-      status,
-      reviewReason: reviewReason ?? null,
-      reviewedAt: new Date(),
-      reviewedByUserId: adminUserId,
-    },
-  });
-
-  return updated;
 }
 
 export async function listVerificationQueue() {

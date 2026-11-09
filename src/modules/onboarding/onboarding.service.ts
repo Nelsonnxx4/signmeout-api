@@ -1,13 +1,21 @@
 import { prisma } from "../../config/database.js"; // ADAPT
+import { logger } from "../../config/logger.js";
 import { HttpError } from "../../lib/http-error.js";
+import {
+	createStudentDocumentUploadUrl,
+	deleteSignatureAsset,
+	validateStudentDocumentUpload,
+} from "../../integrations/storage/r2.client.js";
 import {
 	PaystackError,
 	createTransferRecipient,
-	listBanks,
 	resolveAccount,
 } from "../../integrations/paystack/paystack.client.js";
-import { mapPaystackError } from "../banks/bank.service.js";
-import type { ProfileInput } from "./onboarding.schema.js";
+import { getBankByCode, mapPaystackError } from "../banks/bank.service.js";
+import type {
+	ProfileInput,
+	StudentVerificationInput,
+} from "./onboarding.schema.js";
 import {
 	COMMISSION_POLICY,
 	deriveOnboardingStatus,
@@ -16,7 +24,7 @@ import {
 const maskAccount = (n: string) => `******${n.slice(-4)}`;
 
 export async function getStatus(userId: string) {
-	const [profile, bank, acceptance] = await Promise.all([
+	const [profile, bank, acceptance, verification] = await Promise.all([
 		prisma.ownerProfile.findUnique({
 			where: { userId },
 			include: {
@@ -33,10 +41,39 @@ export async function getStatus(userId: string) {
 				},
 			},
 		}),
+		prisma.studentVerification.findFirst({
+			where: {
+				userId,
+				OR: [
+					{ fullName: { not: null }, admissionNumber: { not: null } },
+					{ documents: { some: { documentType: { not: null } } } },
+				],
+			},
+			orderBy: { submittedAt: "desc" },
+			select: {
+				id: true,
+				status: true,
+				fullName: true,
+				admissionNumber: true,
+				nickname: true,
+				submittedAt: true,
+				documents: {
+					select: {
+						documentType: true,
+						originalName: true,
+						mimeType: true,
+						sizeBytes: true,
+					},
+				},
+			},
+		}),
 	]);
 
 	const status = deriveOnboardingStatus({
 		hasProfile: Boolean(profile?.schoolId && profile?.departmentId),
+		hasStudentVerification: verification?.status === "APPROVED" &&
+			(Boolean(verification.fullName && verification.admissionNumber) ||
+				verification.documents.some((document) => document.documentType !== null)),
 		hasBank: Boolean(bank),
 		acceptedCurrentPolicy: Boolean(acceptance),
 	});
@@ -54,11 +91,64 @@ export async function getStatus(userId: string) {
 					accountNumber: maskAccount(bank.accountNumber),
 				}
 			: null,
+		studentVerification: verification
+			? {
+					id: verification.id,
+					status: verification.status,
+					fullName: verification.fullName,
+					admissionNumber: verification.admissionNumber,
+					nickname: verification.nickname,
+					submittedAt: verification.submittedAt,
+					documents: verification.documents,
+				}
+			: null,
 		commission: {
 			policy: COMMISSION_POLICY,
 			acceptedAt: acceptance?.acceptedAt ?? null,
 		},
 	};
+}
+
+export async function createStudentDocumentUpload(
+	userId: string,
+	contentType: string,
+	sizeBytes: number,
+) {
+	return createStudentDocumentUploadUrl(userId, contentType, sizeBytes);
+}
+
+export async function submitStudentVerification(
+	userId: string,
+	input: StudentVerificationInput,
+) {
+	try {
+		await prisma.$transaction(async (tx) => {
+			await tx.studentVerification.create({
+				data: {
+					userId,
+					fullName: input.fullName,
+					admissionNumber: input.admissionNumber,
+					nickname: input.nickname ?? null,
+					status: "APPROVED",
+					reviewedAt: new Date(),
+				},
+				select: {
+					id: true,
+					status: true,
+					fullName: true,
+					admissionNumber: true,
+					nickname: true,
+					submittedAt: true,
+				},
+			});
+
+		});
+	} catch (error) {
+		throw error;
+	}
+
+	await markCompleteIfReady(userId);
+	return getStatus(userId);
 }
 
 async function markCompleteIfReady(userId: string) {
@@ -151,8 +241,7 @@ export async function saveBank(
 		);
 
 	try {
-		const banks = await listBanks();
-		const bank = banks.find((b) => b.code === input.bankCode);
+		const bank = getBankByCode(input.bankCode);
 		if (!bank)
 			throw new HttpError(
 				400,

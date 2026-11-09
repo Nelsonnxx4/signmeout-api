@@ -1,35 +1,189 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import type { Payment as PaymentRecord, Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "../../config/database.js";
 import { env } from "../../config/env.js";
 import { HttpError } from "../../lib/http-error.js";
-import { initializeTransaction } from "../../integrations/paystack/paystack.client.js";
+import { createSigningAccessToken } from "../../lib/signing-access.js";
+import {
+  initializeTransaction,
+  PaystackError,
+  verifyTransaction,
+} from "../../integrations/paystack/paystack.client.js";
 import { isSigningAvailable } from "../shirts/shirt.rules.js";
+import { processPaystackTransferWebhook } from "../withdrawals/withdrawal.service.js";
 import { calculateCheckoutTotals, getValidSignatureSizes } from "./payment.rules.js";
 
-export async function getPaymentStatus(reference: string) {
-  const payment = await prisma.payment.findUnique({
+function toPaymentStatusResponse(
+  payment: PaymentRecord & {
+    entitlements: Array<{ id: string; status: string }>;
+  },
+) {
+  const entitlement = payment.entitlements[0];
+  return {
+    id: payment.id,
+    status: payment.status,
+    reference: payment.reference,
+    grossAmountKobo: payment.grossAmountKobo,
+    ownerAmountKobo: payment.ownerAmountKobo,
+    platformAmountKobo: payment.platformAmountKobo,
+    signatureSize: payment.signatureSize,
+    ownerBasisPoints: payment.ownerBasisPoints,
+    platformBasisPoints: payment.platformBasisPoints,
+    commissionPolicyVersion: payment.commissionPolicyVersion,
+    giftAmountKobo: payment.giftAmountKobo,
+    enlargementFeeKobo: payment.enlargementFeeKobo,
+    paidAt: payment.paidAt,
+    createdAt: payment.createdAt,
+    signing:
+      payment.status === "PAID" && entitlement
+        ? {
+            entitlementId: entitlement.id,
+            status: entitlement.status,
+            accessToken: createSigningAccessToken(entitlement.id),
+          }
+        : null,
+  };
+}
+
+async function findPaymentForStatus(reference: string) {
+  return prisma.payment.findUnique({
     where: { reference },
-    select: {
-      id: true,
-      status: true,
-      reference: true,
-      grossAmountKobo: true,
-      ownerAmountKobo: true,
-      platformAmountKobo: true,
-      giftAmountKobo: true,
-      enlargementFeeKobo: true,
-      paidAt: true,
-      createdAt: true,
+    include: {
+      entitlements: { select: { id: true, status: true } },
     },
   });
+}
 
+async function recordSuccessfulPayment(
+  payment: PaymentRecord,
+  providerData: {
+    status?: string;
+    amount?: number;
+    currency?: string;
+    id?: number | string;
+  },
+  eventType: string,
+  rawPayload: Prisma.InputJsonValue,
+) {
+  if (
+    providerData.status !== "success" ||
+    providerData.currency !== "NGN" ||
+    providerData.amount === undefined
+  ) {
+    throw new HttpError(400, "PAYMENT_NOT_VERIFIED", "Provider payment details do not match the expected NGN checkout.");
+  }
+  if (providerData.amount !== payment.grossAmountKobo) {
+    throw new HttpError(400, "PAYMENT_AMOUNT_MISMATCH", "Payment amount does not match the verified checkout total.");
+  }
+
+  return prisma.$transaction(async (txClient) => {
+    const transitioned = await txClient.payment.updateMany({
+      where: { id: payment.id, status: "PENDING" },
+      data: {
+        status: "PAID",
+        providerTransactionId: providerData.id === undefined ? null : String(providerData.id),
+        paidAt: new Date(),
+      },
+    });
+
+    await txClient.paymentEvent.create({
+      data: { paymentId: payment.id, eventType, rawPayload },
+    });
+
+    if (transitioned.count === 0) {
+      const current = await txClient.payment.findUnique({
+        where: { id: payment.id },
+        select: { status: true },
+      });
+      return current?.status ?? payment.status;
+    }
+
+    if (!payment.shirtId) {
+      throw new HttpError(409, "PAYMENT_SHIRT_MISSING", "Payment is not associated with a shirt.");
+    }
+
+    await txClient.signingEntitlement.create({
+      data: { paymentId: payment.id, shirtId: payment.shirtId, status: "AVAILABLE" },
+    });
+    await txClient.ledgerEntry.createMany({
+      data: [
+        {
+          ownerId: payment.ownerId,
+          paymentId: payment.id,
+          entryType: "OWNER_CREDIT",
+          amountKobo: payment.ownerAmountKobo,
+          description: "Owner share from successful payment",
+          sourceReference: payment.reference,
+          idempotencyKey: `${payment.reference}:owner-credit`,
+        },
+        {
+          ownerId: null,
+          paymentId: payment.id,
+          entryType: "PLATFORM_REVENUE",
+          amountKobo: payment.platformAmountKobo,
+          description: "Platform commission from successful payment",
+          sourceReference: payment.reference,
+          idempotencyKey: `${payment.reference}:platform-revenue`,
+        },
+      ],
+    });
+    return "PAID";
+  });
+}
+
+export async function getPaymentStatus(reference: string) {
+  let payment = await findPaymentForStatus(reference);
   if (!payment) {
     throw new HttpError(404, "PAYMENT_NOT_FOUND", "Payment not found.");
   }
 
-  return payment;
+  if (payment.status === "PENDING") {
+    const pendingPayment = payment;
+    let providerData;
+    try {
+      providerData = await verifyTransaction(pendingPayment.reference);
+    } catch (error) {
+      if (error instanceof PaystackError) {
+        throw new HttpError(502, "PAYMENT_RECONCILIATION_FAILED", "Paystack could not confirm the payment status.");
+      }
+      throw error;
+    }
+
+    if (providerData.reference !== pendingPayment.reference) {
+      throw new HttpError(502, "PAYMENT_REFERENCE_MISMATCH", "Paystack returned a different payment reference.");
+    }
+    if (providerData.status === "success") {
+      await recordSuccessfulPayment(
+        pendingPayment,
+        providerData,
+        "transaction.reconciled",
+        providerData as unknown as Prisma.InputJsonValue,
+      );
+    } else if (providerData.status === "failed") {
+      await prisma.$transaction(async (tx) => {
+        await tx.paymentEvent.create({
+          data: {
+            paymentId: pendingPayment.id,
+            eventType: "transaction.reconciled_failed",
+            rawPayload: providerData as unknown as Prisma.InputJsonValue,
+          },
+        });
+        await tx.payment.updateMany({
+          where: { id: pendingPayment.id, status: "PENDING" },
+          data: { status: "FAILED" },
+        });
+      });
+    }
+
+    payment = await findPaymentForStatus(reference);
+    if (!payment) {
+      throw new HttpError(404, "PAYMENT_NOT_FOUND", "Payment not found.");
+    }
+  }
+
+  return toPaymentStatusResponse(payment);
 }
 
 export async function createCheckout({
@@ -75,7 +229,7 @@ export async function createCheckout({
   const ownerAmountKobo = totals.ownerAmountKobo;
   const platformAmountKobo = totals.platformAmountKobo;
 
-  const paymentReference = `SMO-${Date.now()}-${randomUUID().slice(0, 12)}`;
+  const paymentReference = `SMO-${Date.now()}-${randomUUID()}`;
 
   const payment = await prisma.payment.create({
     data: {
@@ -90,6 +244,9 @@ export async function createCheckout({
       grossAmountKobo,
       ownerAmountKobo,
       platformAmountKobo,
+      ownerBasisPoints: totals.ownerBasisPoints,
+      platformBasisPoints: totals.platformBasisPoints,
+      commissionPolicyVersion: totals.commissionPolicyVersion,
       status: "PENDING",
     },
   });
@@ -114,18 +271,37 @@ export async function createCheckout({
         reference: payment.reference,
         status: payment.status,
         giftAmountKobo: payment.giftAmountKobo,
+        signatureSize: payment.signatureSize,
         enlargementFeeKobo: payment.enlargementFeeKobo,
         grossAmountKobo: payment.grossAmountKobo,
         ownerAmountKobo: payment.ownerAmountKobo,
         platformAmountKobo: payment.platformAmountKobo,
+        ownerBasisPoints: payment.ownerBasisPoints,
+        platformBasisPoints: payment.platformBasisPoints,
+        commissionPolicyVersion: payment.commissionPolicyVersion,
       },
       authorizationUrl: initialization.authorization_url,
     };
   } catch (error) {
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: { status: "FAILED" },
-    });
+    const definitiveRejection =
+      error instanceof PaystackError && [400, 422].includes(error.status);
+
+    if (definitiveRejection) {
+      await prisma.payment.updateMany({
+        where: { id: payment.id, status: "PENDING" },
+        data: { status: "FAILED" },
+      });
+    }
+
+    if (error instanceof PaystackError) {
+      throw new HttpError(
+        502,
+        "PAYMENT_INITIALIZATION_FAILED",
+        "Payment could not be initialized. Check the payment status before trying again.",
+        { reference: payment.reference, status: definitiveRejection ? "FAILED" : "PENDING" },
+      );
+    }
+
     throw error;
   }
 }
@@ -181,6 +357,22 @@ export async function processPaystackWebhook(rawBody: string, signature: string 
   const paymentEvent = payload.event;
   const tx = payload.data;
   const reference = tx.reference;
+
+  if (paymentEvent.startsWith("transfer.")) {
+    const withdrawal = await processPaystackTransferWebhook({
+      eventType: paymentEvent,
+      reference,
+      amount: tx.amount,
+      currency: tx.currency,
+      rawPayload: JSON.parse(rawBody),
+    });
+    return {
+      received: true,
+      status: withdrawal.status,
+      reference,
+    };
+  }
+
   const payment = await prisma.payment.findUnique({ where: { reference } });
   if (!payment) {
     throw new HttpError(404, "PAYMENT_NOT_FOUND", "Payment reference was not found.");
@@ -215,73 +407,11 @@ export async function processPaystackWebhook(rawBody: string, signature: string 
     return { received: true, status, reference };
   }
 
-  if (tx.status !== "success" || tx.currency !== "NGN" || tx.amount === undefined) {
-    throw new HttpError(400, "PAYMENT_NOT_VERIFIED", "Payment is not a verified NGN success.");
-  }
-
-  if (tx.amount !== payment.grossAmountKobo) {
-    throw new HttpError(400, "PAYMENT_AMOUNT_MISMATCH", "Payment amount does not match the verified checkout total.");
-  }
-
-  const result = await prisma.$transaction(async (txClient) => {
-    const transitioned = await txClient.payment.updateMany({
-      where: { id: payment.id, status: "PENDING" },
-      data: {
-        status: "PAID",
-        providerTransactionId: tx.id === undefined ? null : String(tx.id),
-        paidAt: new Date(),
-      },
-    });
-
-    await txClient.paymentEvent.create({
-      data: {
-        paymentId: payment.id,
-        eventType: paymentEvent,
-        rawPayload: JSON.parse(rawBody),
-      },
-    });
-
-    if (transitioned.count === 0) {
-      const current = await txClient.payment.findUnique({
-        where: { id: payment.id },
-        select: { status: true },
-      });
-      return current?.status ?? payment.status;
-    }
-
-    if (!payment.shirtId) {
-      throw new HttpError(409, "PAYMENT_SHIRT_MISSING", "Payment is not associated with a shirt.");
-    }
-
-    await txClient.signingEntitlement.create({
-      data: { paymentId: payment.id, shirtId: payment.shirtId, status: "AVAILABLE" },
-    });
-
-    await txClient.ledgerEntry.createMany({
-      data: [
-        {
-          ownerId: payment.ownerId,
-          paymentId: payment.id,
-          entryType: "OWNER_CREDIT",
-          amountKobo: payment.ownerAmountKobo,
-          description: "Owner share from successful payment",
-          sourceReference: payment.reference,
-          idempotencyKey: `${payment.reference}:owner-credit`,
-        },
-        {
-          ownerId: null,
-          paymentId: payment.id,
-          entryType: "PLATFORM_REVENUE",
-          amountKobo: payment.platformAmountKobo,
-          description: "Platform commission from successful payment",
-          sourceReference: payment.reference,
-          idempotencyKey: `${payment.reference}:platform-revenue`,
-        },
-      ],
-    });
-
-    return "PAID";
-  });
-
+  const result = await recordSuccessfulPayment(
+    payment,
+    tx,
+    paymentEvent,
+    JSON.parse(rawBody),
+  );
   return { received: true, status: result, reference };
 }

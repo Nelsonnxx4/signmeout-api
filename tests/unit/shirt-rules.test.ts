@@ -44,11 +44,11 @@ describe("public shirt transforms", () => {
 
     expect(signature).toMatchObject({
       id: "sig-1",
-      assetKey: "shirts/abc/signature.png",
       surfaceId: "front-left",
       position: { x: 0.12, y: 0.44 },
       size: { width: 42, height: 18 },
       visibility: "VISIBLE",
     });
+    expect(signature).not.toHaveProperty("assetKey");
   });
 });
