@@ -2,31 +2,17 @@
 CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('OWNER', 'ADMIN');
-CREATE TYPE "SchoolType" AS ENUM ('FEDERAL', 'STATE', 'PRIVATE');
-CREATE TYPE "SchoolStatus" AS ENUM ('APPROVED', 'PENDING', 'REJECTED');
-CREATE TYPE "VerificationStatus" AS ENUM ('NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED', 'REQUIRES_RESUBMISSION');
-CREATE TYPE "ShirtType" AS ENUM ('SHORT_SLEEVE', 'LONG_SLEEVE');
-CREATE TYPE "ShirtStatus" AS ENUM ('ACTIVE', 'PAUSED', 'FULL', 'ARCHIVED');
-CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'AUTHORIZED', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED');
-CREATE TYPE "SigningEntitlementStatus" AS ENUM ('AVAILABLE', 'USED', 'EXPIRED', 'CANCELLED');
-CREATE TYPE "SignatureVisibilityStatus" AS ENUM ('VISIBLE', 'HIDDEN', 'FLAGGED');
-CREATE TYPE "LedgerEntryType" AS ENUM ('OWNER_CREDIT', 'PLATFORM_REVENUE', 'GATEWAY_FEE', 'WITHDRAWAL_HOLD', 'WITHDRAWAL_RELEASE', 'WITHDRAWAL_COMPLETED', 'TRANSFER_FEE', 'REFUND_ADJUSTMENT', 'CHARGEBACK_ADJUSTMENT');
-CREATE TYPE "WithdrawalStatus" AS ENUM ('PENDING', 'PROCESSING', 'REQUIRES_ACTION', 'PAID', 'FAILED', 'REVERSED', 'CANCELLED');
-
--- CreateTable: commission_policies
-CREATE TABLE "commission_policies" (
-    "id" UUID NOT NULL,
-    "version" VARCHAR(64) NOT NULL,
-    "platformBasisPoints" INTEGER NOT NULL,
-    "ownerBasisPoints" INTEGER NOT NULL,
-    "effectiveAt" TIMESTAMP(3) NOT NULL,
-    "retiredAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "commission_policies_pkey" PRIMARY KEY ("id")
-);
+DO $$ BEGIN CREATE TYPE "UserRole" AS ENUM ('OWNER', 'ADMIN'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "SchoolType" AS ENUM ('FEDERAL', 'STATE', 'PRIVATE'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "SchoolStatus" AS ENUM ('APPROVED', 'PENDING', 'REJECTED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "VerificationStatus" AS ENUM ('NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED', 'REQUIRES_RESUBMISSION'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "ShirtType" AS ENUM ('SHORT_SLEEVE', 'LONG_SLEEVE'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "ShirtStatus" AS ENUM ('ACTIVE', 'PAUSED', 'FULL', 'ARCHIVED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'AUTHORIZED', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "SigningEntitlementStatus" AS ENUM ('AVAILABLE', 'USED', 'EXPIRED', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "SignatureVisibilityStatus" AS ENUM ('VISIBLE', 'HIDDEN', 'FLAGGED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "LedgerEntryType" AS ENUM ('OWNER_CREDIT', 'PLATFORM_REVENUE', 'GATEWAY_FEE', 'WITHDRAWAL_HOLD', 'WITHDRAWAL_RELEASE', 'WITHDRAWAL_COMPLETED', 'TRANSFER_FEE', 'REFUND_ADJUSTMENT', 'CHARGEBACK_ADJUSTMENT'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE TYPE "WithdrawalStatus" AS ENUM ('PENDING', 'PROCESSING', 'REQUIRES_ACTION', 'PAID', 'FAILED', 'REVERSED', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- CreateTable: users
 CREATE TABLE "users" (
@@ -290,10 +276,6 @@ CREATE TABLE "withdrawals" (
     CONSTRAINT "withdrawals_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex: commission_policies
-CREATE UNIQUE INDEX "commission_policies_version_key" ON "commission_policies"("version");
-CREATE INDEX "commission_policies_effectiveAt_idx" ON "commission_policies"("effectiveAt");
-
 -- CreateIndex: users
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
@@ -455,4 +437,3 @@ ALTER TABLE "ledger_entries"
 -- AddForeignKey: withdrawals
 ALTER TABLE "withdrawals"
     ADD CONSTRAINT "withdrawals_userId_fkey" FOREIGN KEY ("userId") REFERENCES "owner_profiles"("userId") ON DELETE CASCADE ON UPDATE CASCADE;
-
