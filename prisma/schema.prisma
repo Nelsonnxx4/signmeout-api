@@ -471,6 +471,9 @@ model Withdrawal {
   failureReason     String?
   requestedAt       DateTime         @default(now())
   adminResponseDeadline DateTime
+  payoutAttempts    Int              @default(0)
+  payoutNextAttemptAt DateTime?
+  payoutLockedUntil DateTime?
   processedAt       DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -481,6 +484,7 @@ model Withdrawal {
   alert         WithdrawalAlert?
 
   @@index([userId, status])
+  @@index([status, adminResponseDeadline, payoutNextAttemptAt, payoutLockedUntil], map: "withdrawals_payout_worker_idx")
   @@map("withdrawals")
 }
 

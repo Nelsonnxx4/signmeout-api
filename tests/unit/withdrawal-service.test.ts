@@ -114,6 +114,7 @@ describe("requestWithdrawal", () => {
         accountName: "Owner",
         paystackRecipient: "RCP_test",
         adminResponseDeadline: expect.any(Date),
+        payoutNextAttemptAt: expect.any(Date),
       },
       select: {
         id: true,
@@ -127,20 +128,7 @@ describe("requestWithdrawal", () => {
         processedAt: true,
       },
     });
-    expect(txMock.studentVerification.findFirst).toHaveBeenCalledWith({
-      where: {
-        userId: "owner-1",
-        OR: expect.any(Array),
-      },
-      orderBy: { submittedAt: "desc" },
-      select: {
-        id: true,
-        status: true,
-        fullName: true,
-        admissionNumber: true,
-        documents: { select: { documentType: true } },
-      },
-    });
+    expect(txMock.studentVerification.findFirst).not.toHaveBeenCalled();
     expect(txMock.withdrawalAlert.create).toHaveBeenCalledWith({
       data: { withdrawalId: "withdrawal-1" },
     });
@@ -160,13 +148,13 @@ describe("requestWithdrawal", () => {
     expect(txMock.withdrawal.create).not.toHaveBeenCalled();
   });
 
-  it("requires the onboarding verification to be submitted before withdrawal", async () => {
+  it("does not require a separate student verification check for withdrawal", async () => {
     txMock.studentVerification.findFirst.mockResolvedValue(null);
 
     await expect(
       requestWithdrawal("owner-1", 5_000, "request-key"),
-    ).rejects.toMatchObject({ code: "VERIFICATION_REQUIRED", status: 403 });
-    expect(txMock.withdrawal.create).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ status: "PENDING" });
+    expect(txMock.studentVerification.findFirst).not.toHaveBeenCalled();
   });
 
   it("cancels a pending withdrawal and releases its hold atomically", async () => {

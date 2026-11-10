@@ -23,6 +23,9 @@ const { prismaMock, txMock, verifyTransactionMock } = vi.hoisted(() => {
 });
 
 vi.mock("../../src/config/database.js", () => ({ prisma: prismaMock }));
+vi.mock("../../src/config/logger.js", () => ({
+  logger: { error: vi.fn() },
+}));
 vi.mock("../../src/config/env.js", () => ({
   env: { paystackSecretKey: "test-paystack-secret" },
 }));

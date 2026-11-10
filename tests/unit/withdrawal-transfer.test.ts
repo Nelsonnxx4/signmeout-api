@@ -20,7 +20,13 @@ const { prismaMock, txMock, transferConfig, paystackMock } = vi.hoisted(() => {
       verifyTransfer: vi.fn(),
     },
     prismaMock: {
-      withdrawal: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn() },
+      withdrawal: {
+        findUnique: vi.fn(),
+        findMany: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
       bankAccount: { findUnique: vi.fn(), update: vi.fn() },
       $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
     },
@@ -28,6 +34,9 @@ const { prismaMock, txMock, transferConfig, paystackMock } = vi.hoisted(() => {
 });
 
 vi.mock("../../src/config/database.js", () => ({ prisma: prismaMock }));
+vi.mock("../../src/config/logger.js", () => ({
+  logger: { error: vi.fn() },
+}));
 vi.mock("../../src/config/env.js", () => ({
   env: { get paystackTransfersEnabled() { return transferConfig.enabled; } },
 }));
@@ -46,6 +55,7 @@ vi.mock("../../src/integrations/paystack/paystack.client.js", () => ({
 
 import {
   initiateWithdrawalTransfer,
+  processDueWithdrawalPayouts,
   processPaystackTransferWebhook,
 } from "../../src/modules/withdrawals/withdrawal.service.js";
 
@@ -56,6 +66,7 @@ const pendingWithdrawal = {
   status: "PROCESSING",
   idempotencyKey: "idem-1",
   transferReference: "SMO-TRF-1",
+  adminResponseDeadline: new Date(Date.now() - 1_000),
   bankCode: "001",
   bankName: "Test Bank",
   accountNumber: "1234567890",
@@ -75,6 +86,7 @@ describe("Paystack withdrawal transfers", () => {
       id: pendingWithdrawal.id,
       amountKobo: pendingWithdrawal.amountKobo,
     });
+    prismaMock.withdrawal.findMany.mockResolvedValue([]);
     txMock.withdrawal.updateMany.mockResolvedValue({ count: 1 });
     txMock.withdrawal.findUniqueOrThrow.mockResolvedValue({
       ...pendingWithdrawal,
@@ -84,6 +96,7 @@ describe("Paystack withdrawal transfers", () => {
     txMock.ledgerEntry.create.mockResolvedValue({});
     txMock.adminAuditLog.create.mockResolvedValue({});
     prismaMock.withdrawal.update.mockResolvedValue({});
+    prismaMock.withdrawal.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it("marks a transfer paid and records completion only after a success event", async () => {
@@ -169,6 +182,78 @@ describe("Paystack withdrawal transfers", () => {
     await expect(initiateWithdrawalTransfer("admin-1", "withdrawal-1"))
       .rejects.toMatchObject({ code: "TRANSFERS_DISABLED", status: 503 });
     expect(prismaMock.withdrawal.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("does not initiate a transfer before the 10-minute waiting period ends", async () => {
+    transferConfig.enabled = true;
+    prismaMock.withdrawal.findUnique.mockResolvedValue({
+      ...pendingWithdrawal,
+      status: "PENDING",
+      transferReference: null,
+      adminResponseDeadline: new Date(Date.now() + 60_000),
+    });
+
+    await expect(initiateWithdrawalTransfer("admin-1", "withdrawal-1"))
+      .rejects.toMatchObject({ code: "WITHDRAWAL_WAITING_PERIOD", status: 409 });
+    expect(paystackMock.initiateTransfer).not.toHaveBeenCalled();
+  });
+
+  it("automatically starts a due payout after the waiting period", async () => {
+    transferConfig.enabled = true;
+    prismaMock.withdrawal.findMany.mockResolvedValue([
+      { id: "withdrawal-1", status: "PENDING" },
+    ]);
+    prismaMock.withdrawal.findUnique.mockResolvedValue({
+      ...pendingWithdrawal,
+      status: "PENDING",
+      transferReference: null,
+    });
+    txMock.withdrawal.findUniqueOrThrow.mockResolvedValue({
+      ...pendingWithdrawal,
+      status: "PROCESSING",
+      transferReference: "SMO-TRF-test",
+    });
+    prismaMock.withdrawal.findUniqueOrThrow.mockResolvedValue({
+      ...pendingWithdrawal,
+      status: "PROCESSING",
+      transferReference: "SMO-TRF-test",
+    });
+    paystackMock.initiateTransfer.mockResolvedValue({
+      reference: "SMO-TRF-test",
+      status: "pending",
+    });
+
+    await processDueWithdrawalPayouts();
+
+    expect(paystackMock.initiateTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: pendingWithdrawal.amountKobo }),
+    );
+    expect(prismaMock.withdrawal.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ payoutLockedUntil: null }),
+      }),
+    );
+  });
+
+  it("reconciles an existing transfer reference instead of initiating a duplicate", async () => {
+    transferConfig.enabled = true;
+    prismaMock.withdrawal.findMany.mockResolvedValue([
+      { id: "withdrawal-1", status: "PROCESSING" },
+    ]);
+    prismaMock.withdrawal.findUnique.mockResolvedValue(pendingWithdrawal);
+    paystackMock.verifyTransfer.mockResolvedValue({
+      reference: pendingWithdrawal.transferReference,
+      status: "pending",
+    });
+    txMock.withdrawal.findUnique.mockResolvedValue(pendingWithdrawal);
+    txMock.withdrawal.findUniqueOrThrow.mockResolvedValue(pendingWithdrawal);
+
+    await processDueWithdrawalPayouts();
+
+    expect(paystackMock.verifyTransfer).toHaveBeenCalledWith(
+      pendingWithdrawal.transferReference,
+    );
+    expect(paystackMock.initiateTransfer).not.toHaveBeenCalled();
   });
 
   it("does not mark a withdrawal paid from the initiation response", async () => {

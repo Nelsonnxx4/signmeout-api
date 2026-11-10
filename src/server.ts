@@ -5,10 +5,12 @@ import { prisma } from "./config/database.js";
 import { env } from "./config/env.js";
 import { logger } from "./config/logger.js";
 import { startWithdrawalAlertWorker, stopWithdrawalAlertWorker } from "./modules/withdrawals/withdrawal-alerts.js";
+import { startWithdrawalPayoutWorker, stopWithdrawalPayoutWorker } from "./modules/withdrawals/withdrawal-payout.worker.js";
 
 const startServer = async () => {
   await prisma.$connect();
   startWithdrawalAlertWorker();
+  startWithdrawalPayoutWorker();
 
   const server = createServer(app);
 
@@ -19,6 +21,7 @@ const startServer = async () => {
   const shutdown = async (signal: NodeJS.Signals) => {
     logger.info({ signal }, "Shutting down SignMeOut API");
     stopWithdrawalAlertWorker();
+    stopWithdrawalPayoutWorker();
 
     server.close(async (error) => {
       await prisma.$disconnect();

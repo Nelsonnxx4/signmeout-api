@@ -55,20 +55,31 @@ account-resolution code for that institution.
 
 ## Withdrawal request alerts
 
-Withdrawal eligibility requires completed onboarding, a Paystack-resolved bank
-account, an automatically approved onboarding student-verification
-submission, and enough available ledger balance. The destination bank details are
-snapshotted with each request so later bank-account edits cannot redirect an
-already-requested payout.
+Withdrawal eligibility requires completed onboarding, a validated bank account,
+and enough available ledger balance. The withdrawal endpoint does not apply an
+additional student-verification gate. Destination bank details are snapshotted
+with each request so later bank-account edits cannot redirect an already-requested
+payout.
 
 Each request reserves its balance, creates a durable notification job, and
-sets an admin response target 10 minutes after submission. The worker retries
-email and webhook delivery independently. If the admin does not act by the
-target, the request remains pending and the funds remain reserved; the user
-may cancel before transfer processing starts. The 10-minute target is not a
-guarantee that a bank will settle the transfer within 10 minutes. A payout
-still requires an admin to start the Paystack transfer, and Paystack/bank
-processing can take longer.
+sets a 10-minute waiting period. The alert worker retries email and webhook
+delivery independently. When the waiting period ends, the payout worker
+automatically initiates a Paystack transfer if transfers are enabled. The user
+may cancel before transfer processing starts. The 10-minute period is not a
+guarantee that a bank will settle the transfer within 10 minutes; Paystack and
+bank processing can take longer.
+
+The payout worker uses a database lock so multiple API instances do not start
+the same transfer. It retries recipient preparation with backoff and reconciles
+uncertain transfer results against Paystack using the original reference; it
+never starts a second transfer just because a provider response timed out.
+Confirmed failures release the reserved balance, while confirmed reversals add
+the appropriate ledger entry. A payout that requires provider action remains
+unpaid and must be resolved through the admin/provider workflow.
+
+Keep `PAYSTACK_TRANSFERS_ENABLED=false` until Paystack and compliance approvals
+are recorded. With transfers disabled, requests remain reserved after the
+waiting period and no automatic payout is initiated.
 
 Configure both delivery channels:
 
@@ -86,17 +97,10 @@ Both alerts contain the contributor's full bank account number as configured.
 Restrict mailbox and webhook access, retain payloads only as long as needed,
 and never log the raw alert body.
 
-Onboarding student verification accepts either a full name and admission
-number (with an optional nickname), or one uploaded student ID/admission
-letter. Request an upload URL from
-`POST /api/v1/onboarding/student-verification/upload` with `contentType` and
-`sizeBytes`, PUT the file to the signed URL, then submit either the details or
-the returned `assetKey` plus `originalName` and `documentType` to
-`POST /api/v1/onboarding/student-verification`. Supported documents are
-PNG/JPEG/WebP/PDF up to 10 MB. Submission is automatically marked approved
-and is required to complete onboarding and request withdrawals. This is
-self-attestation only: the API validates file type/integrity but does not
-authenticate the student or verify document contents.
+Onboarding student verification currently accepts full name and admission
+number, with an optional nickname; document upload is not part of this flow.
+Submission is automatically marked approved as self-attestation, not as
+independent proof of student status.
 
 Signature uploads require a private Cloudflare R2 bucket configured with
 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and
@@ -105,9 +109,7 @@ origin to `PUT` the signed upload URL with the returned `Content-Type` and
 `x-amz-meta-entitlement` or `x-amz-meta-owner` headers. The backend validates and re-encodes the
 uploaded PNG/JPEG/WebP before making it available.
 Configure an R2 lifecycle rule to delete abandoned objects under the
-`signature-uploads/` and `verification-uploads/` prefixes after 24 hours.
-Validated student documents are moved to the private `student-verifications/`
-prefix and must not be included in that temporary-upload lifecycle rule.
+`signature-uploads/` prefix after 24 hours.
 
 Every `ShirtModelVersion` needs an administrator-supplied `placementConfig`
 before signing is enabled. Set it with
@@ -119,7 +121,8 @@ fails closed rather than guessing shirt geometry.
 Paystack transfer initiation is disabled by default. Keep
 `PAYSTACK_TRANSFERS_ENABLED=false` until Paystack and compliance approvals are
 recorded. When approved, configure the Paystack secret and explicitly set this
-flag to `true`. Admin transfer initiation and reconciliation are exposed at
+flag to `true`; the payout worker will then initiate due transfers after the
+10-minute wait. Admin transfer initiation and reconciliation are exposed at
 `POST /api/v1/admin/withdrawals/:id/transfer` and
 `POST /api/v1/admin/withdrawals/:id/reconcile`; confirmed statuses are also
 processed through the signed Paystack webhook. A contributor may cancel a

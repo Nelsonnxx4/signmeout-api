@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "../../config/database.js";
 import { env } from "../../config/env.js";
+import { logger } from "../../config/logger.js";
 import {
   createTransferRecipient,
   initiateTransfer,
@@ -41,27 +42,10 @@ async function getLedgerBalance(
 }
 
 export async function getWithdrawalSummary(userId: string) {
-  const [bank, verification, profile, balance, lastWithdrawal] = await Promise.all([
+  const [bank, profile, balance, lastWithdrawal] = await Promise.all([
     prisma.bankAccount.findUnique({
       where: { userId },
       select: { id: true, bankName: true, accountNumber: true, verifiedAt: true },
-    }),
-    prisma.studentVerification.findFirst({
-      where: {
-        userId,
-        OR: [
-          { fullName: { not: null }, admissionNumber: { not: null } },
-          { documents: { some: { documentType: { not: null } } } },
-        ],
-      },
-      orderBy: { submittedAt: "desc" },
-      select: {
-        id: true,
-        status: true,
-        fullName: true,
-        admissionNumber: true,
-        documents: { select: { documentType: true } },
-      },
     }),
     prisma.ownerProfile.findUnique({
       where: { userId },
@@ -77,11 +61,6 @@ export async function getWithdrawalSummary(userId: string) {
 
   return {
     onboardingComplete: Boolean(profile?.onboardingCompletedAt),
-    hasApprovedVerification: Boolean(
-      verification?.status === "APPROVED" &&
-        ((verification.fullName && verification.admissionNumber) ||
-          verification.documents.some((document) => document.documentType !== null)),
-    ),
     hasValidBank: Boolean(bank?.verifiedAt),
     ...balance,
     lastWithdrawalStatus: lastWithdrawal?.status ?? null,
@@ -117,27 +96,10 @@ export async function requestWithdrawal(
   try {
     return await prisma.$transaction(
       async (tx) => {
-        const [profile, verification, bank, balance] = await Promise.all([
+        const [profile, bank, balance] = await Promise.all([
           tx.ownerProfile.findUnique({
             where: { userId },
             select: { onboardingCompletedAt: true },
-          }),
-          tx.studentVerification.findFirst({
-            where: {
-              userId,
-              OR: [
-                { fullName: { not: null }, admissionNumber: { not: null } },
-                { documents: { some: { documentType: { not: null } } } },
-              ],
-            },
-            orderBy: { submittedAt: "desc" },
-            select: {
-              id: true,
-              status: true,
-              fullName: true,
-              admissionNumber: true,
-              documents: { select: { documentType: true } },
-            },
           }),
           tx.bankAccount.findUnique({
             where: { userId },
@@ -156,16 +118,6 @@ export async function requestWithdrawal(
         if (!profile?.onboardingCompletedAt) {
           throw new HttpError(409, "ONBOARDING_INCOMPLETE", "Complete onboarding before requesting a withdrawal.");
         }
-        if (
-          !verification ||
-          verification.status !== "APPROVED" ||
-          !(
-            (verification.fullName && verification.admissionNumber) ||
-            verification.documents.some((document) => document.documentType !== null)
-          )
-        ) {
-          throw new HttpError(403, "VERIFICATION_REQUIRED", "Complete the student verification step before requesting a withdrawal.");
-        }
         if (!bank?.verifiedAt) {
           throw new HttpError(409, "BANK_REQUIRED", "Add and validate a bank account before requesting a withdrawal.");
         }
@@ -173,6 +125,7 @@ export async function requestWithdrawal(
           throw new HttpError(409, "INSUFFICIENT_BALANCE", "Requested amount exceeds the available balance.");
         }
 
+        const adminResponseDeadline = new Date(Date.now() + 10 * 60_000);
         const withdrawal = await tx.withdrawal.create({
           data: {
             userId,
@@ -184,7 +137,8 @@ export async function requestWithdrawal(
             accountNumber: bank.accountNumber,
             accountName: bank.accountName,
             paystackRecipient: bank.paystackRecipient,
-            adminResponseDeadline: new Date(Date.now() + 10 * 60_000),
+            adminResponseDeadline,
+            payoutNextAttemptAt: adminResponseDeadline,
           },
           select: {
             id: true,
@@ -399,6 +353,10 @@ async function applyTransferStatus({
         status: nextStatus,
         failureReason: nextStatus === "FAILED" ? "Paystack confirmed transfer failure." : null,
         processedAt: ["PAID", "FAILED", "REVERSED"].includes(nextStatus) ? new Date() : null,
+        payoutNextAttemptAt: nextStatus === "PROCESSING"
+          ? new Date(Date.now() + 30_000)
+          : null,
+        payoutLockedUntil: null,
       },
     });
     if (changed.count !== 1) {
@@ -448,7 +406,7 @@ async function applyTransferStatus({
     if (adminUserId) {
       await tx.adminAuditLog.create({
         data: {
-          adminUserId,
+          adminUserId: adminUserId ?? undefined,
           action: "withdrawal.transfer_reconciled",
           resourceType: "withdrawal",
           resourceId: withdrawalId,
@@ -462,7 +420,7 @@ async function applyTransferStatus({
 }
 
 export async function initiateWithdrawalTransfer(
-  adminUserId: string,
+  adminUserId: string | null,
   withdrawalId: string,
 ) {
   if (!env.paystackTransfersEnabled) {
@@ -475,6 +433,13 @@ export async function initiateWithdrawalTransfer(
   }
   if (withdrawal.status !== "PENDING") {
     throw new HttpError(409, "WITHDRAWAL_NOT_READY", "Only pending withdrawals can start a transfer.");
+  }
+  if (withdrawal.adminResponseDeadline > new Date()) {
+    throw new HttpError(
+      409,
+      "WITHDRAWAL_WAITING_PERIOD",
+      "The 10-minute withdrawal waiting period has not ended.",
+    );
   }
 
   if (
@@ -509,21 +474,32 @@ export async function initiateWithdrawalTransfer(
   const transferReference = `SMO-TRF-${randomUUID()}`;
   const claimed = await prisma.$transaction(async (tx) => {
     const updated = await tx.withdrawal.updateMany({
-      where: { id: withdrawalId, status: "PENDING", transferReference: null },
-      data: { status: "PROCESSING", transferReference },
+      where: {
+        id: withdrawalId,
+        status: "PENDING",
+        transferReference: null,
+        adminResponseDeadline: { lte: new Date() },
+      },
+      data: {
+        status: "PROCESSING",
+        transferReference,
+        payoutNextAttemptAt: new Date(Date.now() + 30_000),
+      },
     });
     if (updated.count !== 1) {
       throw new HttpError(409, "WITHDRAWAL_CHANGED", "This withdrawal is already being processed.");
     }
-    await tx.adminAuditLog.create({
-      data: {
-        adminUserId,
-        action: "withdrawal.transfer_initiated",
-        resourceType: "withdrawal",
-        resourceId: withdrawalId,
-        details: { amountKobo: withdrawal.amountKobo, bankName: withdrawal.bankName },
-      },
-    });
+    if (adminUserId) {
+      await tx.adminAuditLog.create({
+        data: {
+          adminUserId: adminUserId ?? undefined,
+          action: "withdrawal.transfer_initiated",
+          resourceType: "withdrawal",
+          resourceId: withdrawalId,
+          details: { amountKobo: withdrawal.amountKobo, bankName: withdrawal.bankName },
+        },
+      });
+    }
     return tx.withdrawal.findUniqueOrThrow({ where: { id: withdrawalId } });
   });
 
@@ -541,7 +517,7 @@ export async function initiateWithdrawalTransfer(
         eventType: "transfer.initiation_rejected",
         providerStatus: "failed",
         rawPayload: { message: error.message, status: error.status },
-        adminUserId,
+        adminUserId: adminUserId ?? undefined,
       });
       throw new HttpError(
         502,
@@ -550,6 +526,10 @@ export async function initiateWithdrawalTransfer(
         { withdrawalId, transferReference },
       );
     }
+    await prisma.withdrawal.updateMany({
+      where: { id: withdrawalId, status: "PROCESSING", transferReference },
+      data: { payoutNextAttemptAt: new Date(Date.now() + 30_000) },
+    });
     throw new HttpError(
       502,
       "TRANSFER_RESULT_UNKNOWN",
@@ -562,7 +542,7 @@ export async function initiateWithdrawalTransfer(
 }
 
 export async function reconcileWithdrawalTransfer(
-  adminUserId: string,
+  adminUserId: string | null,
   withdrawalId: string,
 ) {
   if (!env.paystackTransfersEnabled) {
@@ -602,8 +582,112 @@ export async function reconcileWithdrawalTransfer(
     eventType: "transfer.reconciled",
     providerStatus: transfer.status,
     rawPayload: transfer as unknown as Prisma.InputJsonValue,
-    adminUserId,
+    adminUserId: adminUserId ?? undefined,
   });
+}
+
+export async function processDueWithdrawalPayouts() {
+  if (!env.paystackTransfersEnabled) return;
+
+  const now = new Date();
+  const due = await prisma.withdrawal.findMany({
+    where: {
+      OR: [
+        {
+          status: "PENDING",
+          adminResponseDeadline: { lte: now },
+          OR: [
+            { payoutNextAttemptAt: null },
+            { payoutNextAttemptAt: { lte: now } },
+          ],
+        },
+        {
+          status: "PROCESSING",
+          transferReference: { not: null },
+          OR: [
+            { payoutNextAttemptAt: null },
+            { payoutNextAttemptAt: { lte: now } },
+          ],
+        },
+      ],
+      AND: [{ OR: [{ payoutLockedUntil: null }, { payoutLockedUntil: { lt: now } }] }],
+    },
+    orderBy: { requestedAt: "asc" },
+    take: 10,
+    select: { id: true, status: true },
+  });
+
+  for (const candidate of due) {
+    const conditions: Prisma.WithdrawalWhereInput[] = [
+      { OR: [{ payoutLockedUntil: null }, { payoutLockedUntil: { lt: now } }] },
+    ];
+    if (candidate.status === "PENDING") {
+      conditions.push(
+        { adminResponseDeadline: { lte: now } },
+        {
+          OR: [
+            { payoutNextAttemptAt: null },
+            { payoutNextAttemptAt: { lte: now } },
+          ],
+        },
+      );
+    } else {
+      conditions.push({
+        transferReference: { not: null },
+      });
+      conditions.push({
+        OR: [
+          { payoutNextAttemptAt: null },
+          { payoutNextAttemptAt: { lte: now } },
+        ],
+      });
+    }
+
+    const lockUntil = new Date(Date.now() + 60_000);
+    const claim = await prisma.withdrawal.updateMany({
+      where: {
+        id: candidate.id,
+        status: candidate.status,
+        AND: conditions,
+      },
+      data: {
+        payoutLockedUntil: lockUntil,
+        payoutAttempts: { increment: 1 },
+      },
+    });
+    if (claim.count !== 1) continue;
+
+    try {
+      if (candidate.status === "PENDING") {
+        await initiateWithdrawalTransfer(null, candidate.id);
+      } else {
+        await reconcileWithdrawalTransfer(null, candidate.id);
+      }
+    } catch (error) {
+      const current = await prisma.withdrawal.findUnique({
+        where: { id: candidate.id },
+        select: { status: true, payoutAttempts: true },
+      });
+      if (current && ["PENDING", "PROCESSING"].includes(current.status)) {
+        const delay = current.status === "PROCESSING"
+          ? 30_000
+          : Math.min(15_000 * 2 ** (current.payoutAttempts - 1), 15 * 60_000);
+        await prisma.withdrawal.updateMany({
+          where: { id: candidate.id, payoutLockedUntil: lockUntil },
+          data: { payoutNextAttemptAt: new Date(Date.now() + delay) },
+        });
+      }
+      logger.error(
+        { error, withdrawalId: candidate.id, status: current?.status },
+        "Automatic withdrawal payout attempt failed",
+      );
+    } finally {
+      await prisma.withdrawal.updateMany({
+        where: { id: candidate.id, payoutLockedUntil: lockUntil },
+        data: { payoutLockedUntil: null },
+      });
+    }
+  }
 }
 
 export async function processPaystackTransferWebhook({

@@ -29,11 +29,10 @@ SignMeOut earns 15% of every successful contribution, while the shirt owner rece
 
 The platform bears payment-processing and transfer fees from its commission.
 
-Onboarding collects student identity details or a private student document.
-Submission is automatically marked approved; this is a self-attestation flow,
-not independent proof of student status. Withdrawals require completed
-onboarding, a Paystack-resolved payout account, a submitted verification, and
-sufficient available balance.
+Onboarding collects student identity details as self-attestation; it does not
+currently accept document uploads or independently prove student status.
+Withdrawals require completed onboarding, a validated payout account, and
+sufficient available balance, but do not apply a separate verification gate.
 
 ### Backend responsibilities
 
@@ -559,22 +558,16 @@ The ledger must distinguish recorded owner liabilities from money actually avail
 
 ### 10.1 Purpose
 
-Collect either the student's full name and admission number (with optional
-nickname), or one student ID/admission letter. Submission is automatically
-marked approved to satisfy onboarding and withdrawal eligibility; the backend
-does not validate the authenticity of the identity details or document.
-Additional identity checks required by Paystack or applicable law remain
-subject to provider and legal review.
+Collect the student's full name and admission number, with an optional
+nickname. Submission is automatically marked approved as self-attestation; the
+backend does not independently verify the identity details. Additional identity
+checks required by Paystack or applicable law remain subject to provider and
+legal review.
 
 ### 10.2 Verification requirements
 
-The onboarding submission accepts either personal details or one of:
-
-- Student identification card.
-- Admission letter.
-
-The upload must be private, type-checked, and size-limited. File validation
-does not prove the document is genuine.
+The onboarding submission requires full name and admission number. Nickname is
+optional. Document upload is not part of the current onboarding flow.
 
 ### 10.3 Verification states
 
@@ -586,17 +579,16 @@ does not prove the document is genuine.
 
 ### 10.4 Verification process
 
-1. Owner submits full name/admission number (optional nickname), or obtains
-   an upload URL and uploads a student ID/admission letter.
-2. Backend validates the fields or file and stores documents privately.
-3. Backend marks the submission approved and completes the onboarding step.
-4. The approved submission enables withdrawal eligibility.
+1. Owner submits full name and admission number, with an optional nickname.
+2. Backend validates required fields and marks the submission approved as
+   self-attestation.
+3. This submission completes the student-details onboarding step. Withdrawal
+   eligibility is based on onboarding completion, bank validation, and balance,
+   with no separate verification gate.
 
 ### 10.5 Security
 
-- Private document storage with account-scoped, short-lived upload URLs.
-- Server-side document MIME/signature/size validation.
-- Do not expose private storage keys in public APIs.
+- Do not describe this self-attestation flow as independent identity verification.
 - Defined document retention periods.
 - Auto-approval is only completion of the self-attestation step; it must not be
   represented as independent identity or document verification.
@@ -612,7 +604,6 @@ An owner can request withdrawal only when:
 
 - Authenticated.
 - Onboarding is complete.
-- Onboarding student verification has been submitted.
 - Bank account is validated.
 - Sufficient available balance exists.
 - No applicable withdrawal restriction exists.
@@ -627,17 +618,20 @@ An owner can request withdrawal only when:
 6. Withdrawal record is created.
 7. A durable alert is queued for delivery to the configured administrator by
    email and signed webhook, including the full payout account number.
-8. The request includes an administrator response target 10 minutes after
-   submission. This target is not a guarantee of bank settlement within that
-   period.
-9. The administrator initiates the transfer through the approved payout
-   arrangement.
-10. Transfer status is monitored and reconciled with Paystack.
+8. The request waits 10 minutes after submission, during which the owner can
+   cancel and release the reserved funds.
+9. After the wait, the automatic payout worker initiates a Paystack transfer
+   when transfers are enabled and provider/compliance approval is recorded.
+10. Transfer status is monitored and reconciled with Paystack. Uncertain
+    results are checked against the original provider reference and are never
+    blindly resubmitted.
 11. The ledger is updated only after the provider's final status is confirmed.
 
-If no administrator acts by the 10-minute response target, the request remains
-pending and its funds remain reserved. The owner can cancel before transfer
-processing begins; cancellation releases the reserved funds atomically.
+The 10-minute wait is not a guarantee of bank settlement within that period.
+Confirmed transfer failures release the hold, confirmed reversals restore the
+balance through a reversal ledger entry, and provider-action-required transfers
+remain unpaid until resolved. If transfers are disabled, the request remains
+pending with funds reserved after the wait.
 Payout account details are snapshotted on the withdrawal so later bank-account
 changes cannot redirect an existing request.
 
@@ -1171,9 +1165,8 @@ Tasks:
 - Implement dashboard analytics.
 - Implement wallet balance endpoints.
 - Build transaction history.
-- Implement student document uploads.
-- Build administrator verification workflow.
-- Add verification notifications.
+- Keep onboarding student details as self-attestation; document uploads and
+  administrator review are deferred.
 
 **Deliverable:** Owner dashboard data and verification APIs.
 
@@ -1186,7 +1179,7 @@ Tasks:
 - Implement withdrawal eligibility.
 - Reserve available balances.
 - Integrate approved payout provider.
-- Handle transfer authorization.
+- Automatically initiate approved transfers after the 10-minute waiting period.
 - Process transfer webhooks.
 - Reconcile final transfer status.
 - Implement failure and reversal handling.
@@ -1290,10 +1283,11 @@ The backend MVP is complete when:
 - Contributors receive one signing entitlement per successful payment.
 - Signatures are securely stored and correctly associated with shirt surfaces.
 - Owners can view accurate earnings and transaction histories.
-- Withdrawal requests require a submitted onboarding student verification;
-  submission is auto-approved and is not independently authenticated.
+- Withdrawals do not require a separate student-verification gate beyond
+  completion of onboarding.
 - Each withdrawal reserves funds, snapshots payout details, and queues email
-  and signed-webhook administrator alerts with a 10-minute response target.
+  and signed-webhook administrator alerts, then starts the approved automatic
+  payout flow after a 10-minute waiting period.
 - Authorized administrators can review verification requests.
 - Withdrawals cannot exceed available balances.
 - Transfers are reconciled without duplicate payouts.
