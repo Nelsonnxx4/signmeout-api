@@ -20,6 +20,7 @@ const envSchema = z.object({
     .default("info"),
   BETTER_AUTH_SECRET: optionalString,
   BETTER_AUTH_URL: z.url().default("http://localhost:5000"),
+  BETTER_AUTH_API_KEY: optionalString,
   GOOGLE_CLIENT_ID: optionalString,
   GOOGLE_CLIENT_SECRET: optionalString,
   PAYSTACK_SECRET_KEY: optionalString,
@@ -63,6 +64,14 @@ const envSchema = z.object({
         code: "custom",
         path: ["BETTER_AUTH_SECRET"],
         message: "BETTER_AUTH_SECRET is required in production",
+      });
+    }
+
+    if (!values.BETTER_AUTH_API_KEY) {
+      context.addIssue({
+        code: "custom",
+        path: ["BETTER_AUTH_API_KEY"],
+        message: "BETTER_AUTH_API_KEY is required in production",
       });
     }
 
@@ -185,6 +194,7 @@ export const env = {
   logLevel: result.data.LOG_LEVEL,
   betterAuthSecret: result.data.BETTER_AUTH_SECRET,
   betterAuthUrl: result.data.BETTER_AUTH_URL,
+  betterAuthApiKey: result.data.BETTER_AUTH_API_KEY,
   googleClientId: result.data.GOOGLE_CLIENT_ID,
   googleClientSecret: result.data.GOOGLE_CLIENT_SECRET,
   paystackSecretKey: result.data.PAYSTACK_SECRET_KEY,

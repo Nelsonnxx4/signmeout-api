@@ -4,7 +4,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY prisma ./prisma
-RUN npm run db:generate
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build

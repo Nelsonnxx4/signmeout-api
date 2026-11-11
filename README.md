@@ -40,6 +40,8 @@ npm run dev
 For a deployed database, run `npm run db:deploy` before starting the API. The
 repository includes a non-root, multi-stage `Dockerfile` and a GitHub Actions
 workflow that validates Prisma, typechecks, tests, and builds each change.
+The production build runs `prisma generate` before TypeScript compilation so
+cached deployment dependencies cannot leave Prisma Client out of date.
 
 Update `DATABASE_URL` in `.env` if your local PostgreSQL credentials differ
 from the example. Paystack and Better Auth secrets are not needed for the
@@ -50,6 +52,11 @@ credentials, and a configured email provider. Register this Google OAuth
 callback URL with Google:
 `http://localhost:5000/api/v1/auth/callback/google` (replace the host in
 production).
+
+Better Auth Infrastructure is enabled when `BETTER_AUTH_API_KEY` is set. In
+production this key is required, and the Dash ownership URL is the backend
+origin followed by `/api/v1/auth` (for example,
+`https://signmeout-api.onrender.com/api/v1/auth`).
 
 The database seed loads the configured university list and the 10 supported
 department choices. In production, the bank dropdown is loaded from Paystack's

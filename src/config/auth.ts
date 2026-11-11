@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { emailOTP } from "better-auth/plugins";
+import { dash } from "@better-auth/infra";
 import { prisma } from "./database.js";
 import { env } from "./env.js";
 import { emailProvider } from "../integrations/email.provider.js";
@@ -68,6 +69,9 @@ export const auth = betterAuth({
         });
       },
     }),
+    ...(isProd && env.betterAuthApiKey
+      ? [dash({ apiKey: env.betterAuthApiKey })]
+      : []),
   ],
 
   advanced: {
