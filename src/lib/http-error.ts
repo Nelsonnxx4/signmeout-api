@@ -1,6 +1,5 @@
 import type { ZodType } from "zod";
 
-// ADAPT: if you already have an AppError/ApiError, use it instead and delete this file.
 export class HttpError extends Error {
 	constructor(
 		public readonly status: number,

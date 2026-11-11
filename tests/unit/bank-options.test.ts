@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { vi } from "vitest";
+
+vi.mock("../../src/config/env.js", () => ({
+  env: { nodeEnv: "test", paystackSecretKey: undefined },
+}));
+
 import { BANK_OPTIONS, getBankByCode, getBanks } from "../../src/modules/banks/bank.service.js";
 
 describe("configured bank options", () => {
@@ -8,15 +14,15 @@ describe("configured bank options", () => {
 		expect(BANK_OPTIONS).toHaveLength(29);
 	});
 
-	it("looks up the configured Paystack code for payout validation", () => {
-		expect(getBankByCode("044")).toEqual({
+	it("looks up the configured Paystack code for payout validation", async () => {
+		await expect(getBankByCode("044")).resolves.toEqual({
 			code: "044",
 			name: "Access Bank",
 		});
-		expect(getBankByCode("100033")).toEqual({
+		await expect(getBankByCode("100033")).resolves.toEqual({
 			code: "100033",
 			name: "PalmPay",
 		});
-		expect(getBankByCode("not-a-bank")).toBeUndefined();
+		await expect(getBankByCode("not-a-bank")).resolves.toBeUndefined();
 	});
 });

@@ -1,13 +1,14 @@
 import { Router } from "express";
 
-import { prisma } from "../../config/database.js";
 import { requireAdmin, requireAuth } from "../../middleware/auth.js";
 import { parseOrThrow } from "../../lib/http-error.js";
-import { requestWithdrawalSchema } from "./withdrawal.schema.js";
+import { adminWithdrawalQuerySchema, requestWithdrawalSchema } from "./withdrawal.schema.js";
 import {
   getWithdrawalSummary,
+  getWithdrawal,
   cancelWithdrawal,
   initiateWithdrawalTransfer,
+  listAdminWithdrawals,
   listWithdrawals,
   requestWithdrawal,
   reconcileWithdrawalTransfer,
@@ -21,6 +22,13 @@ withdrawalRouter.get("/withdrawals/summary", requireAuth, async (req, res) => {
 
 withdrawalRouter.get("/withdrawals", requireAuth, async (req, res) => {
   res.json({ success: true, data: await listWithdrawals(req.auth!.user.id) });
+});
+
+withdrawalRouter.get("/withdrawals/:id", requireAuth, async (req, res) => {
+  res.json({
+    success: true,
+    data: await getWithdrawal(req.auth!.user.id, String(req.params.id)),
+  });
 });
 
 withdrawalRouter.post("/withdrawals", requireAuth, async (req, res) => {
@@ -38,24 +46,11 @@ withdrawalRouter.post("/withdrawals/:id/cancel", requireAuth, async (req, res) =
   });
 });
 
-withdrawalRouter.get("/admin/withdrawals", requireAuth, requireAdmin, async (_req, res) => {
+withdrawalRouter.get("/admin/withdrawals", requireAuth, requireAdmin, async (req, res) => {
+  const query = parseOrThrow(adminWithdrawalQuerySchema, req.query);
   res.json({
     success: true,
-    data: await prisma.withdrawal.findMany({
-      orderBy: { requestedAt: "desc" },
-      include: {
-        alert: {
-          select: {
-            emailSentAt: true,
-            webhookSentAt: true,
-            emailAttempts: true,
-            webhookAttempts: true,
-            emailLastError: true,
-            webhookLastError: true,
-          },
-        },
-      },
-    }),
+    data: await listAdminWithdrawals(query),
   });
 });
 

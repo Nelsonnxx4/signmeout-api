@@ -1,11 +1,6 @@
-import { prisma } from "../../config/database.js"; // ADAPT
-import { logger } from "../../config/logger.js";
+import { prisma } from "../../config/database.js";
 import { HttpError } from "../../lib/http-error.js";
-import {
-	createStudentDocumentUploadUrl,
-	deleteSignatureAsset,
-	validateStudentDocumentUpload,
-} from "../../integrations/storage/r2.client.js";
+import { enqueueEmail } from "../notifications/email-outbox.service.js";
 import {
 	PaystackError,
 	createTransferRecipient,
@@ -44,10 +39,8 @@ export async function getStatus(userId: string) {
 		prisma.studentVerification.findFirst({
 			where: {
 				userId,
-				OR: [
-					{ fullName: { not: null }, admissionNumber: { not: null } },
-					{ documents: { some: { documentType: { not: null } } } },
-				],
+				fullName: { not: null },
+				admissionNumber: { not: null },
 			},
 			orderBy: { submittedAt: "desc" },
 			select: {
@@ -57,23 +50,15 @@ export async function getStatus(userId: string) {
 				admissionNumber: true,
 				nickname: true,
 				submittedAt: true,
-				documents: {
-					select: {
-						documentType: true,
-						originalName: true,
-						mimeType: true,
-						sizeBytes: true,
-					},
-				},
 			},
 		}),
 	]);
 
 	const status = deriveOnboardingStatus({
 		hasProfile: Boolean(profile?.schoolId && profile?.departmentId),
-		hasStudentVerification: verification?.status === "APPROVED" &&
-			(Boolean(verification.fullName && verification.admissionNumber) ||
-				verification.documents.some((document) => document.documentType !== null)),
+		hasStudentVerification:
+			verification?.status === "APPROVED" &&
+			Boolean(verification.fullName && verification.admissionNumber),
 		hasBank: Boolean(bank),
 		acceptedCurrentPolicy: Boolean(acceptance),
 	});
@@ -99,7 +84,6 @@ export async function getStatus(userId: string) {
 					admissionNumber: verification.admissionNumber,
 					nickname: verification.nickname,
 					submittedAt: verification.submittedAt,
-					documents: verification.documents,
 				}
 			: null,
 		commission: {
@@ -109,43 +93,30 @@ export async function getStatus(userId: string) {
 	};
 }
 
-export async function createStudentDocumentUpload(
-	userId: string,
-	contentType: string,
-	sizeBytes: number,
-) {
-	return createStudentDocumentUploadUrl(userId, contentType, sizeBytes);
-}
-
 export async function submitStudentVerification(
 	userId: string,
 	input: StudentVerificationInput,
 ) {
-	try {
-		await prisma.$transaction(async (tx) => {
-			await tx.studentVerification.create({
-				data: {
-					userId,
-					fullName: input.fullName,
-					admissionNumber: input.admissionNumber,
-					nickname: input.nickname ?? null,
-					status: "APPROVED",
-					reviewedAt: new Date(),
-				},
-				select: {
-					id: true,
-					status: true,
-					fullName: true,
-					admissionNumber: true,
-					nickname: true,
-					submittedAt: true,
-				},
-			});
-
+	await prisma.$transaction(async (tx) => {
+		await tx.studentVerification.create({
+			data: {
+				userId,
+				fullName: input.fullName,
+				admissionNumber: input.admissionNumber,
+				nickname: input.nickname ?? null,
+				status: "APPROVED",
+				reviewedAt: new Date(),
+			},
+			select: {
+				id: true,
+				status: true,
+				fullName: true,
+				admissionNumber: true,
+				nickname: true,
+				submittedAt: true,
+			},
 		});
-	} catch (error) {
-		throw error;
-	}
+	});
 
 	await markCompleteIfReady(userId);
 	return getStatus(userId);
@@ -154,9 +125,26 @@ export async function submitStudentVerification(
 async function markCompleteIfReady(userId: string) {
 	const s = await getStatus(userId);
 	if (s.completed) {
-		await prisma.ownerProfile.update({
-			where: { userId },
-			data: { onboardingCompletedAt: new Date() },
+		await prisma.$transaction(async (tx) => {
+			const changed = await tx.ownerProfile.updateMany({
+				where: { userId, onboardingCompletedAt: null },
+				data: { onboardingCompletedAt: new Date() },
+			});
+			if (changed.count === 1) {
+				const user = await tx.user.findUnique({
+					where: { id: userId },
+					select: { email: true, name: true },
+				});
+				if (user) {
+					await enqueueEmail(tx, {
+						eventType: "onboarding.completed",
+						recipient: user.email,
+						subject: "Your SignMeOut profile is ready",
+						body: `${user.name}, your onboarding is complete. You can now create and share your shirts.`,
+						idempotencyKey: `${userId}:onboarding-completed-email`,
+					});
+				}
+			}
 		});
 	}
 	return s;
@@ -241,7 +229,7 @@ export async function saveBank(
 		);
 
 	try {
-		const bank = getBankByCode(input.bankCode);
+		const bank = await getBankByCode(input.bankCode);
 		if (!bank)
 			throw new HttpError(
 				400,
@@ -255,7 +243,7 @@ export async function saveBank(
 			input.bankCode,
 		);
 
-		// Best effort: payouts (Phase 8) can create the recipient lazily if this fails.
+		// Best effort: the payout workflow can create the recipient lazily if this fails.
 		let recipient: string | null = null;
 		try {
 			recipient = await createTransferRecipient({
@@ -270,17 +258,18 @@ export async function saveBank(
 			);
 		}
 
-		await prisma.bankAccount.upsert({
-			where: { userId },
-			update: {
+		await prisma.$transaction(async (tx) => {
+			const saved = await tx.bankAccount.upsert({
+				where: { userId },
+				update: {
 				bankCode: bank.code,
 				bankName: bank.name,
 				accountNumber: input.accountNumber,
 				accountName,
 				paystackRecipient: recipient,
 				verifiedAt: new Date(),
-			},
-			create: {
+				},
+				create: {
 				userId,
 				bankCode: bank.code,
 				bankName: bank.name,
@@ -288,7 +277,21 @@ export async function saveBank(
 				accountName,
 				paystackRecipient: recipient,
 				verifiedAt: new Date(),
-			},
+				},
+			});
+			const user = await tx.user.findUnique({
+				where: { id: userId },
+				select: { email: true, name: true },
+			});
+			if (user) {
+				await enqueueEmail(tx, {
+					eventType: "bank-account.changed",
+					recipient: user.email,
+					subject: "Your SignMeOut payout account changed",
+					body: `${user.name}, your payout account is now ${saved.bankName} ending in ${saved.accountNumber.slice(-4)}. If you did not make this change, contact support immediately.`,
+					idempotencyKey: `${userId}:bank-account:${saved.updatedAt.toISOString()}`,
+				});
+			}
 		});
 	} catch (err) {
 		throw mapPaystackError(err);

@@ -12,7 +12,6 @@ import { schoolRouter } from "../modules/schools/school.routes.js";
 import { publicShirtRouter, shirtRouter } from "../modules/shirts/shirt.routes.js";
 import { signatureRouter } from "../modules/signatures/signature.routes.js";
 import { userRouter } from "../modules/users/user.routes.js";
-import { verificationRouter } from "../modules/verification/verification.routes.js";
 import { withdrawalRouter } from "../modules/withdrawals/withdrawal.routes.js";
 
 export const v1Router = Router();
@@ -28,6 +27,5 @@ v1Router.use(dashboardRouter);
 v1Router.use(shirtRouter);
 v1Router.use(paymentRouter);
 v1Router.use(signatureRouter);
-v1Router.use(verificationRouter);
 v1Router.use(withdrawalRouter);
 v1Router.use(publicShirtRouter);

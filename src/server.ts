@@ -6,11 +6,15 @@ import { env } from "./config/env.js";
 import { logger } from "./config/logger.js";
 import { startWithdrawalAlertWorker, stopWithdrawalAlertWorker } from "./modules/withdrawals/withdrawal-alerts.js";
 import { startWithdrawalPayoutWorker, stopWithdrawalPayoutWorker } from "./modules/withdrawals/withdrawal-payout.worker.js";
+import { startPaymentReconciliationWorker, stopPaymentReconciliationWorker } from "./modules/payments/payment-reconciliation.worker.js";
+import { startEmailOutboxWorker, stopEmailOutboxWorker } from "./modules/notifications/email-outbox.worker.js";
 
 const startServer = async () => {
   await prisma.$connect();
   startWithdrawalAlertWorker();
   startWithdrawalPayoutWorker();
+  startPaymentReconciliationWorker();
+  startEmailOutboxWorker();
 
   const server = createServer(app);
 
@@ -22,6 +26,8 @@ const startServer = async () => {
     logger.info({ signal }, "Shutting down SignMeOut API");
     stopWithdrawalAlertWorker();
     stopWithdrawalPayoutWorker();
+    stopPaymentReconciliationWorker();
+    stopEmailOutboxWorker();
 
     server.close(async (error) => {
       await prisma.$disconnect();

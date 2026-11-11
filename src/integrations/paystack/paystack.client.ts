@@ -168,6 +168,7 @@ export async function verifyTransaction(reference: string) {
     amount: number;
     currency: string;
     id?: number | string;
+    fees?: number;
   }>(`/transaction/verify/${encodeURIComponent(reference)}`);
   return res.data;
 }
@@ -194,4 +195,30 @@ export async function initializeTransaction(input: {
     authorization_url: res.data.authorization_url,
     reference: res.data.reference,
   };
+}
+
+export async function createRefund(input: {
+  transaction: string;
+  amount: number;
+  reference: string;
+  reason: string;
+}) {
+  const res = await request<{
+    id: number;
+    reference?: string;
+    status: string;
+    amount: number;
+    currency: string;
+  }>("/refund", {
+    method: "POST",
+    body: JSON.stringify({
+      transaction: input.transaction,
+      amount: input.amount,
+      currency: "NGN",
+      reference: input.reference,
+      customer_note: input.reason,
+      merchant_note: input.reason,
+    }),
+  });
+  return res.data;
 }

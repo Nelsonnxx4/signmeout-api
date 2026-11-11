@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const resumeSigningSchema = z.object({
+  reference: z.string().trim().min(20).max(160),
+});
+
 export const createSignatureSchema = z.object({
   surfaceId: z.string().min(1),
   assetKey: z.string().min(1).max(500),

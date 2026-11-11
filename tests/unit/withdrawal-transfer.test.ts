@@ -10,6 +10,8 @@ const { prismaMock, txMock, transferConfig, paystackMock } = vi.hoisted(() => {
     withdrawalEvent: { create: vi.fn() },
     ledgerEntry: { create: vi.fn() },
     adminAuditLog: { create: vi.fn() },
+    user: { findUnique: vi.fn() },
+    emailOutbox: { upsert: vi.fn() },
   };
   return {
     txMock: tx,
@@ -95,6 +97,8 @@ describe("Paystack withdrawal transfers", () => {
     txMock.withdrawalEvent.create.mockResolvedValue({});
     txMock.ledgerEntry.create.mockResolvedValue({});
     txMock.adminAuditLog.create.mockResolvedValue({});
+    txMock.user.findUnique.mockResolvedValue(null);
+    txMock.emailOutbox.upsert.mockResolvedValue({});
     prismaMock.withdrawal.update.mockResolvedValue({});
     prismaMock.withdrawal.updateMany.mockResolvedValue({ count: 1 });
   });

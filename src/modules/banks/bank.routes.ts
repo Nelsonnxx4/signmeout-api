@@ -1,5 +1,5 @@
 import { Router } from "express";
-import rateLimit from "express-rate-limit"; // ADAPT: already in your stack per README; otherwise npm i express-rate-limit
+import rateLimit from "express-rate-limit";
 import { requireAuth } from "../../middleware/auth.js";
 import { parseOrThrow } from "../../lib/http-error.js";
 import { getBanks, resolveBankAccount } from "./bank.service.js";

@@ -1,5 +1,5 @@
-import { prisma } from "../../config/database.js"; // ADAPT
-import { env } from "../../config/env.js"; // ADAPT: uses FRONTEND_ORIGIN
+import { prisma } from "../../config/database.js";
+import { env } from "../../config/env.js";
 import { HttpError } from "../../lib/http-error.js";
 import { generateSlug } from "./shirt.slug.js";
 import {
@@ -33,7 +33,6 @@ type OwnerRow = {
 	modelVersion: { version: number; modelKey: string };
 };
 
-// ADAPT: change "/s/" to your frontend's public shirt route.
 const toOwnerShirt = (r: OwnerRow) => ({
 	...r,
 	shareUrl: `${env.frontendUrl}/s/${r.slug}`,
@@ -140,8 +139,8 @@ export async function updateShirtStatus(
 			`A ${shirt.status.toLowerCase()} shirt can't be changed to ${to.toLowerCase()}.`,
 		);
 	}
-	// updateMany with the current status in the WHERE makes the transition race-safe
-	// (e.g. Phase 6 marking the shirt FULL at the same moment the owner pauses it).
+	// Including the current status keeps owner changes race-safe against automatic
+	// capacity updates.
 	const { count } = await prisma.shirt.updateMany({
 		where: { id, ownerId, status: shirt.status as ShirtStatus },
 		data: { status: to },
@@ -162,7 +161,12 @@ export async function getPublicShirt(slug: string) {
 			slug: true,
 			shirtType: true,
 			status: true,
-			modelVersion: { select: { version: true, modelKey: true } },
+			modelVersion: { select: { version: true, modelKey: true, placementConfig: true } },
+			_count: {
+				select: {
+					payments: { where: { status: { in: ["PENDING", "PAID"] } } },
+				},
+			},
 			owner: {
 				select: {
 					name: true,
@@ -175,7 +179,8 @@ export async function getPublicShirt(slug: string) {
 	});
 	if (!row || row.status === "ARCHIVED")
 		throw new HttpError(404, "SHIRT_NOT_FOUND", "Shirt not found.");
-	return toPublicShirt(row);
+	const { _count, ...shirt } = row;
+	return toPublicShirt({ ...shirt, reservedSigningSlots: _count.payments });
 }
 
 export async function listPublicSignatures(slug: string) {

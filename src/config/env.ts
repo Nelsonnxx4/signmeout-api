@@ -24,6 +24,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: optionalString,
   PAYSTACK_SECRET_KEY: optionalString,
   PAYSTACK_PUBLIC_KEY: optionalString,
+  PAYSTACK_WEBHOOK_SECRET: optionalString,
   PAYSTACK_TRANSFERS_ENABLED: z.enum(["true", "false"]).default("false"),
   ADMIN_ALERT_EMAIL: z.preprocess(
     emptyStringToUndefined,
@@ -116,6 +117,22 @@ const envSchema = z.object({
         message: "RESEND_API_KEY and EMAIL_FROM are required in production",
       });
     }
+
+    if (!values.PAYSTACK_SECRET_KEY) {
+      context.addIssue({
+        code: "custom",
+        path: ["PAYSTACK_SECRET_KEY"],
+        message: "PAYSTACK_SECRET_KEY is required in production",
+      });
+    }
+
+    if (!values.PAYSTACK_WEBHOOK_SECRET) {
+      context.addIssue({
+        code: "custom",
+        path: ["PAYSTACK_WEBHOOK_SECRET"],
+        message: "PAYSTACK_WEBHOOK_SECRET is required in production",
+      });
+    }
   }
 
   if (
@@ -172,6 +189,7 @@ export const env = {
   googleClientSecret: result.data.GOOGLE_CLIENT_SECRET,
   paystackSecretKey: result.data.PAYSTACK_SECRET_KEY,
   paystackPublicKey: result.data.PAYSTACK_PUBLIC_KEY,
+  paystackWebhookSecret: result.data.PAYSTACK_WEBHOOK_SECRET,
   paystackTransfersEnabled: result.data.PAYSTACK_TRANSFERS_ENABLED === "true",
   adminAlertEmail: result.data.ADMIN_ALERT_EMAIL,
   adminAlertWebhookUrl: result.data.ADMIN_ALERT_WEBHOOK_URL,

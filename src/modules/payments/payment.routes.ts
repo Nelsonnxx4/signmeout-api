@@ -11,11 +11,12 @@ import {
 export const paymentRouter = Router();
 
 paymentRouter.post("/public/shirts/:slug/checkout", async (req, res) => {
-  const { giftAmountKobo, signatureSize } = parseOrThrow(checkoutSchema, req.body);
+  const { contributorEmail, giftAmountKobo, signatureSize } = parseOrThrow(checkoutSchema, req.body);
   const slug = String(req.params.slug);
 
   const result = await createCheckout({
     shirtSlug: slug,
+    contributorEmail,
     giftAmountKobo,
     signatureSize,
   });
@@ -31,6 +32,7 @@ paymentRouter.get("/payments/:reference/status", async (req, res) => {
 paymentRouter.post("/webhooks/paystack", async (req, res) => {
   const payload = req.body;
   const signature = req.headers["x-paystack-signature"];
+  const timestampedSignature = req.headers["paystack-signature"];
 
   const rawBody = Buffer.isBuffer(payload)
     ? payload.toString("utf8")
@@ -41,6 +43,11 @@ paymentRouter.post("/webhooks/paystack", async (req, res) => {
   const result = await processPaystackWebhook(
     rawBody,
     Array.isArray(signature) ? signature[0] : typeof signature === "string" ? signature : undefined,
+    Array.isArray(timestampedSignature)
+      ? timestampedSignature[0]
+      : typeof timestampedSignature === "string"
+        ? timestampedSignature
+        : undefined,
   );
 
   res.json({ success: true, data: result });

@@ -128,8 +128,6 @@ Contributors must not be required to create accounts.
 
 An authorized platform operator who can:
 
-- Review student verification requests.
-- Approve or reject submitted evidence.
 - Inspect payment and withdrawal records.
 - Investigate suspicious transactions.
 - Review failed payouts.
@@ -572,10 +570,7 @@ optional. Document upload is not part of the current onboarding flow.
 ### 10.3 Verification states
 
 - NOT_SUBMITTED
-- PENDING
 - APPROVED
-- REJECTED
-- REQUIRES_RESUBMISSION
 
 ### 10.4 Verification process
 
@@ -589,7 +584,6 @@ optional. Document upload is not part of the current onboarding flow.
 ### 10.5 Security
 
 - Do not describe this self-attestation flow as independent identity verification.
-- Defined document retention periods.
 - Auto-approval is only completion of the self-attestation step; it must not be
   represented as independent identity or document verification.
 - Compliance with applicable Nigerian data protection requirements.
@@ -701,13 +695,6 @@ Analytics must distinguish successful payments from pending and failed payments.
 
 ### Required capabilities
 
-**Verification management**
-
-- View verification queue.
-- Review evidence.
-- Approve or reject requests.
-- Request resubmission.
-
 **Payment management**
 
 - View payment records.
@@ -734,7 +721,6 @@ Analytics must distinguish successful payments from pending and failed payments.
 - Role-based permissions.
 - Strong administrator authentication.
 - Audit logs for sensitive actions.
-- Restricted document access.
 - No direct editing of immutable ledger records.
 
 ---
@@ -747,7 +733,7 @@ The backend should support email notifications for:
 - Password reset.
 - Onboarding completion.
 - New contributions.
-- Student verification decisions.
+- Successful payment receipts and refunds.
 - Withdrawal requests.
 - Successful payouts.
 - Failed withdrawals.
@@ -779,8 +765,7 @@ Use a provider abstraction so email services can be replaced later.
 | SigningEntitlement   | One-time signing authorization                 |
 | Signature            | Digital signatures and placement               |
 | LedgerEntry          | Financial records                              |
-| StudentVerification  | Verification requests                          |
-| VerificationDocument | Private identity evidence                      |
+| StudentVerification  | Self-attested student details                  |
 | Withdrawal           | Withdrawal and payout records                  |
 | AdminAuditLog        | Administrative actions                         |
 | Notification         | Notification delivery records                  |
@@ -826,7 +811,6 @@ Google OAuth credentials must be configured outside source control.
 | GET    | `/banks`                   |
 | POST   | `/banks/resolve`           |
 | PATCH  | `/onboarding/profile`      |
-| POST   | `/onboarding/student-verification/upload` |
 | POST   | `/onboarding/student-verification` |
 | POST   | `/onboarding/bank`         |
 | POST   | `/onboarding/commission`   |
@@ -869,12 +853,10 @@ Google OAuth credentials must be configured outside source control.
 | GET    | `/wallet/balance`      |
 | GET    | `/wallet/transactions` |
 
-### Verification and withdrawals
+### Withdrawals
 
 | Method | Endpoint                |
 | ------ | ----------------------- |
-| POST   | `/verifications`        |
-| GET    | `/verifications/status` |
 | POST   | `/withdrawals`          |
 | GET    | `/withdrawals`          |
 | GET    | `/withdrawals/:id`      |
@@ -884,11 +866,14 @@ Google OAuth credentials must be configured outside source control.
 
 | Method | Endpoint                   |
 | ------ | -------------------------- |
-| GET    | `/admin/verifications`     |
-| PATCH  | `/admin/verifications/:id` |
 | GET    | `/admin/payments`          |
+| POST   | `/admin/payments/:id/refund` |
 | GET    | `/admin/withdrawals`       |
 | GET    | `/admin/audit-logs`        |
+| GET    | `/admin/metrics`           |
+| GET    | `/admin/directory/pending` |
+| PATCH  | `/admin/schools/:id`       |
+| PATCH  | `/admin/departments/:id`   |
 | PUT    | `/admin/shirt-models/:id/placement-config` |
 | POST   | `/admin/withdrawals/:id/transfer` |
 | POST   | `/admin/withdrawals/:id/reconcile` |
@@ -992,8 +977,7 @@ The backend must implement:
 - Payment amount and currency verification.
 - Idempotent financial operations.
 - Rate limiting.
-- Secure file uploads.
-- Private student document storage.
+- Secure signature-image uploads.
 - Secrets stored outside source control.
 - Restricted administrative access.
 - Audit logs.
@@ -1085,7 +1069,7 @@ Tasks:
 - Configure sessions.
 - Implement registration and login.
 - Implement email verification.
-- Implement password reset.
+- Use passwordless email OTP and Google sign-in; no password-reset flow is required.
 - Add owner and admin authorization.
 
 **Deliverable:** Working authentication system.
@@ -1156,9 +1140,9 @@ Tasks:
 
 **Deliverable:** Fully functional backend signing workflow.
 
-### Phase 7 — Dashboard and Verification
+### Phase 7 — Dashboard and Student Details
 
-**Goal:** Provide earnings visibility and identity checks.
+**Goal:** Provide earnings visibility and student self-attestation.
 
 Tasks:
 
@@ -1168,7 +1152,7 @@ Tasks:
 - Keep onboarding student details as self-attestation; document uploads and
   administrator review are deferred.
 
-**Deliverable:** Owner dashboard data and verification APIs.
+**Deliverable:** Owner dashboard data and student-details self-attestation API.
 
 ### Phase 8 — Withdrawals
 
@@ -1260,10 +1244,9 @@ The following must be finalized before the relevant production features are acti
 8. Exact definition of 2×, 3×, and 4× signature dimensions.
 9. Whether signatures can appear on both sides and sleeves.
 10. Whether owners can hide or remove signatures.
-11. Student verification document requirements.
-12. Administrative payout approval thresholds.
-13. File retention and deletion policy.
-14. Final email service and hosting providers.
+11. Administrative payout approval thresholds.
+12. File retention and deletion policy.
+13. Final email service and hosting providers.
 
 ---
 
@@ -1288,7 +1271,6 @@ The backend MVP is complete when:
 - Each withdrawal reserves funds, snapshots payout details, and queues email
   and signed-webhook administrator alerts, then starts the approved automatic
   payout flow after a 10-minute waiting period.
-- Authorized administrators can review verification requests.
 - Withdrawals cannot exceed available balances.
 - Transfers are reconciled without duplicate payouts.
 - Sensitive data is protected.

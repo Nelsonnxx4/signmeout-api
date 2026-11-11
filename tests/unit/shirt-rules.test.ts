@@ -14,7 +14,20 @@ describe("public shirt transforms", () => {
           school: { name: "University of Lagos", status: "APPROVED" },
         },
       },
-      modelVersion: { version: 7, modelKey: "shirt-short-sleeve-v7" },
+      modelVersion: {
+        version: 7,
+        modelKey: "shirt-short-sleeve-v7",
+        placementConfig: {
+          version: 7,
+          surfaces: [{
+            id: "front",
+            bounds: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+            restrictedRegions: [],
+            maxSignatureWidth: 0.25,
+            maxSignatureHeight: 0.25,
+          }],
+        },
+      },
     });
 
     expect(publicShirt).toMatchObject({
@@ -50,5 +63,18 @@ describe("public shirt transforms", () => {
       visibility: "VISIBLE",
     });
     expect(signature).not.toHaveProperty("assetKey");
+  });
+
+  it("fails closed when placement configuration is missing", () => {
+    const publicShirt = toPublicShirt({
+      slug: "not-ready",
+      shirtType: "SHORT_SLEEVE",
+      status: "ACTIVE",
+      owner: { name: "Ada" },
+      modelVersion: { version: 1, modelKey: "short-v1", placementConfig: null },
+    });
+
+    expect(publicShirt.signingAvailable).toBe(false);
+    expect(publicShirt.remainingSigningSlots).toBe(0);
   });
 });

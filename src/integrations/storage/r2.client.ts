@@ -1,7 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import {
-  CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
@@ -18,13 +17,6 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION = 2_000;
 const MAX_IMAGE_PIXELS = 4_000_000;
 const UPLOAD_CONTENT_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const MAX_VERIFICATION_DOCUMENT_BYTES = 10 * 1024 * 1024;
-const VERIFICATION_DOCUMENT_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "application/pdf",
-]);
 
 const client =
   env.r2AccountId && env.r2AccessKeyId && env.r2SecretAccessKey
@@ -169,130 +161,6 @@ export async function validateAndStoreSignatureAsset(
   }));
 
   return canonicalAssetKey;
-}
-
-export async function createStudentDocumentUploadUrl(
-  userId: string,
-  contentType: string,
-  sizeBytes: number,
-) {
-  if (!VERIFICATION_DOCUMENT_TYPES.has(contentType)) {
-    throw new HttpError(400, "UNSUPPORTED_VERIFICATION_DOCUMENT", "Upload a PNG, JPEG, WebP, or PDF document.");
-  }
-  if (!Number.isInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > MAX_VERIFICATION_DOCUMENT_BYTES) {
-    throw new HttpError(400, "INVALID_VERIFICATION_DOCUMENT_SIZE", "Student documents must be 10 MB or smaller.");
-  }
-
-  const { client: s3, bucket } = getStorageConfig();
-  const extension = contentType === "image/jpeg"
-    ? "jpg"
-    : contentType === "application/pdf"
-      ? "pdf"
-      : contentType.slice("image/".length);
-  const assetKey = `verification-uploads/${userId}/${randomUUID()}.${extension}`;
-  const uploadUrl = await getSignedUrl(
-    s3,
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: assetKey,
-      ContentType: contentType,
-      ContentLength: sizeBytes,
-      Metadata: { owner: userId },
-    }),
-    { expiresIn: 300 },
-  );
-
-  return {
-    assetKey,
-    uploadUrl,
-    expiresInSeconds: 300,
-    requiredHeaders: {
-      "Content-Type": contentType,
-      "Content-Length": String(sizeBytes),
-      "x-amz-meta-owner": userId,
-    },
-  };
-}
-
-export async function validateStudentDocumentUpload(assetKey: string, userId: string) {
-  if (!new RegExp(`^verification-uploads/${userId}/[0-9a-f-]{36}\\.(png|jpg|webp|pdf)$`, "i").test(assetKey)) {
-    throw new HttpError(400, "INVALID_VERIFICATION_DOCUMENT", "The uploaded document does not belong to this account.");
-  }
-
-  const { client: s3, bucket } = getStorageConfig();
-  const head = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: assetKey }));
-  if (
-    head.Metadata?.owner !== userId ||
-    !head.ContentType ||
-    !VERIFICATION_DOCUMENT_TYPES.has(head.ContentType) ||
-    !head.ContentLength ||
-    head.ContentLength > MAX_VERIFICATION_DOCUMENT_BYTES
-  ) {
-    throw new HttpError(400, "INVALID_VERIFICATION_DOCUMENT", "The uploaded document is invalid or too large.");
-  }
-
-  const result = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: assetKey }));
-  if (!result.Body) {
-    throw new HttpError(400, "INVALID_VERIFICATION_DOCUMENT", "The uploaded document is empty.");
-  }
-
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  const reader = result.Body.transformToWebStream().getReader();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    totalBytes += value.byteLength;
-    if (totalBytes > MAX_VERIFICATION_DOCUMENT_BYTES) {
-      await reader.cancel();
-      throw new HttpError(400, "INVALID_VERIFICATION_DOCUMENT", "The uploaded document is too large.");
-    }
-    chunks.push(Buffer.from(value));
-  }
-  reader.releaseLock();
-
-  const file = Buffer.concat(chunks, totalBytes);
-  if (file.length !== head.ContentLength || file.length === 0) {
-    throw new HttpError(400, "INVALID_VERIFICATION_DOCUMENT", "The uploaded document size is invalid.");
-  }
-
-  if (head.ContentType === "application/pdf") {
-    if (!file.subarray(0, 5).equals(Buffer.from("%PDF-"))) {
-      throw new HttpError(400, "INVALID_VERIFICATION_DOCUMENT", "The uploaded file is not a valid PDF document.");
-    }
-  } else {
-    let image: Metadata;
-    try {
-      image = await sharp(file, { limitInputPixels: MAX_IMAGE_PIXELS }).metadata();
-    } catch {
-      throw new HttpError(400, "INVALID_VERIFICATION_DOCUMENT", "The uploaded file is not a valid supported image.");
-    }
-    const expectedFormat = head.ContentType === "image/jpeg"
-      ? "jpeg"
-      : head.ContentType.slice("image/".length);
-    if (image.format !== expectedFormat || !image.width || !image.height || image.pages !== undefined && image.pages > 1) {
-      throw new HttpError(400, "INVALID_VERIFICATION_DOCUMENT", "The uploaded image format is invalid or unsupported.");
-    }
-  }
-
-  const extension = assetKey.slice(assetKey.lastIndexOf(".") + 1).toLowerCase();
-  const canonicalKey = `student-verifications/${userId}/${randomUUID()}.${extension}`;
-  await s3.send(new CopyObjectCommand({
-    Bucket: bucket,
-    Key: canonicalKey,
-    CopySource: `${bucket}/${assetKey}`,
-    MetadataDirective: "REPLACE",
-    ContentType: head.ContentType,
-    ContentDisposition: "attachment",
-    Metadata: { owner: userId },
-  }));
-
-  return {
-    storageKey: canonicalKey,
-    mimeType: head.ContentType,
-    sizeBytes: file.length,
-    checksumSha256: createHash("sha256").update(file).digest("hex"),
-  };
 }
 
 export async function createSignatureReadUrl(assetKey: string) {

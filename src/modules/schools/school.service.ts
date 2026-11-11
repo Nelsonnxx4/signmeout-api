@@ -1,4 +1,4 @@
-import { prisma } from "../../config/database.js"; // ADAPT
+import { prisma } from "../../config/database.js";
 import { HttpError } from "../../lib/http-error.js";
 
 export function listSchools() {

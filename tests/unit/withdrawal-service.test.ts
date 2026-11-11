@@ -13,6 +13,8 @@ const { prismaMock, txMock } = vi.hoisted(() => {
       findUniqueOrThrow: vi.fn(),
       updateMany: vi.fn(),
     },
+    user: { findUnique: vi.fn() },
+    emailOutbox: { upsert: vi.fn() },
   };
 
   return {
@@ -55,7 +57,6 @@ describe("requestWithdrawal", () => {
       status: "APPROVED",
       fullName: "Owner",
       admissionNumber: "2020/123",
-      documents: [],
     });
     txMock.bankAccount.findUnique.mockResolvedValue({
       bankCode: "001",
@@ -76,6 +77,8 @@ describe("requestWithdrawal", () => {
     });
     txMock.withdrawal.updateMany.mockResolvedValue({ count: 1 });
     txMock.ledgerEntry.create.mockResolvedValue({});
+    txMock.user.findUnique.mockResolvedValue(null);
+    txMock.emailOutbox.upsert.mockResolvedValue({});
   });
 
   it("returns an existing withdrawal for a matching idempotency key", async () => {

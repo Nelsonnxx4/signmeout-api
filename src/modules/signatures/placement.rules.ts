@@ -22,6 +22,7 @@ const surfaceSchema = z.object({
 
 export const shirtPlacementConfigSchema = z.object({
   version: z.number().int().positive(),
+  maxSignatures: z.number().int().positive().max(10_000).default(200),
   surfaces: z.array(surfaceSchema).min(1),
 }).refine(
   ({ surfaces }) => new Set(surfaces.map(({ id }) => id)).size === surfaces.length,

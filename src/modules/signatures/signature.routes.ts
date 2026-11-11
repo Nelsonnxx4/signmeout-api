@@ -2,7 +2,8 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 
 import { HttpError, parseOrThrow } from "../../lib/http-error.js";
-import { createSignatureSchema, createSignatureUploadSchema } from "./signature.schema.js";
+import { getPaymentStatus } from "../payments/payment.service.js";
+import { createSignatureSchema, createSignatureUploadSchema, resumeSigningSchema } from "./signature.schema.js";
 import {
   createSignature,
   createSignatureUpload,
@@ -29,6 +30,11 @@ function getSigningToken(authorization: string | undefined) {
   }
   return token;
 }
+
+signatureRouter.post("/signing/resume", signingLimiter, async (req, res) => {
+  const { reference } = parseOrThrow(resumeSigningSchema, req.body);
+  res.json({ success: true, data: await getPaymentStatus(reference) });
+});
 
 signatureRouter.post("/signing/assets", signingLimiter, async (req, res) => {
   const payload = parseOrThrow(createSignatureUploadSchema, req.body);

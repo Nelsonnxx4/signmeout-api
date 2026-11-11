@@ -6,6 +6,92 @@ import {
 } from "../signatures/placement.rules.js";
 import type { AdminListQuery, AdminPaymentQuery } from "./admin.types.js";
 
+type DirectoryReview = { status: "APPROVED" | "REJECTED"; active?: boolean };
+
+export async function getAdminMetrics() {
+  const [users, shirts, payments, withdrawals, pendingSchools, pendingDepartments] =
+    await Promise.all([
+      prisma.user.count(),
+      prisma.shirt.count(),
+      prisma.payment.groupBy({ by: ["status"], _count: { _all: true }, _sum: { grossAmountKobo: true } }),
+      prisma.withdrawal.groupBy({ by: ["status"], _count: { _all: true }, _sum: { amountKobo: true } }),
+      prisma.school.count({ where: { status: "PENDING" } }),
+      prisma.department.count({ where: { status: "PENDING" } }),
+    ]);
+
+  return {
+    users,
+    shirts,
+    payments,
+    withdrawals,
+    pendingDirectoryEntries: pendingSchools + pendingDepartments,
+  };
+}
+
+export async function listPendingDirectoryEntries() {
+  const [schools, departments] = await Promise.all([
+    prisma.school.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true, abbreviation: true, type: true, active: true, createdAt: true },
+    }),
+    prisma.department.findMany({
+      where: { status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        name: true,
+        active: true,
+        createdAt: true,
+        school: { select: { id: true, name: true, status: true } },
+      },
+    }),
+  ]);
+  return { schools, departments };
+}
+
+export async function reviewSchool(adminUserId: string, schoolId: string, input: DirectoryReview) {
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.school.findUnique({ where: { id: schoolId } });
+    if (!current) throw new HttpError(404, "SCHOOL_NOT_FOUND", "School not found.");
+    const updated = await tx.school.update({
+      where: { id: schoolId },
+      data: { status: input.status, ...(input.active === undefined ? {} : { active: input.active }) },
+    });
+    await tx.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action: "school.reviewed",
+        resourceType: "school",
+        resourceId: schoolId,
+        details: { fromStatus: current.status, toStatus: input.status },
+      },
+    });
+    return updated;
+  });
+}
+
+export async function reviewDepartment(adminUserId: string, departmentId: string, input: DirectoryReview) {
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.department.findUnique({ where: { id: departmentId } });
+    if (!current) throw new HttpError(404, "DEPARTMENT_NOT_FOUND", "Department not found.");
+    const updated = await tx.department.update({
+      where: { id: departmentId },
+      data: { status: input.status, ...(input.active === undefined ? {} : { active: input.active }) },
+    });
+    await tx.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action: "department.reviewed",
+        resourceType: "department",
+        resourceId: departmentId,
+        details: { fromStatus: current.status, toStatus: input.status },
+      },
+    });
+    return updated;
+  });
+}
+
 async function assertCursorExists(
   model: "payment" | "adminAuditLog",
   cursor: string | undefined,
@@ -38,12 +124,18 @@ export async function listAdminPayments({
       provider: true,
       providerTransactionId: true,
       status: true,
+      refundStatus: true,
+      refundReference: true,
+      refundReason: true,
+      disputeStatus: true,
+      disputeId: true,
       currency: true,
       giftAmountKobo: true,
       enlargementFeeKobo: true,
       grossAmountKobo: true,
       ownerAmountKobo: true,
       platformAmountKobo: true,
+      processingFeeKobo: true,
       createdAt: true,
       paidAt: true,
       ownerProfile: { select: { user: { select: { id: true, name: true, email: true } } } },

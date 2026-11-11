@@ -23,7 +23,6 @@ function deny(
 	code: string,
 	message: string,
 ) {
-	// ADAPT: use your existing error helper/shape and request-id field if it differs.
 	res
 		.status(status)
 		.json({ success: false, error: { code, message, requestId: req.id } });

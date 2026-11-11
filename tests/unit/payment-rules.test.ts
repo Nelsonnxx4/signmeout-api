@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateCheckoutTotals } from "../../src/modules/payments/payment.rules.js";
+import { calculateCheckoutTotals, checkoutSchema } from "../../src/modules/payments/payment.rules.js";
 
 describe("calculateCheckoutTotals", () => {
   it("uses the PRD 85/15 split and signature-upcharge rules", () => {
@@ -18,5 +18,17 @@ describe("calculateCheckoutTotals", () => {
 
   it("rejects invalid size upgrades for a small gift", () => {
     expect(() => calculateCheckoutTotals(200_000, 2)).toThrow(RangeError);
+  });
+
+  it("requires a valid contributor email for Paystack checkout", () => {
+    expect(checkoutSchema.safeParse({
+      contributorEmail: "friend@example.com",
+      giftAmountKobo: 200_000,
+    }).success).toBe(true);
+    expect(checkoutSchema.safeParse({ giftAmountKobo: 200_000 }).success).toBe(false);
+    expect(checkoutSchema.safeParse({
+      contributorEmail: "not-an-email",
+      giftAmountKobo: 200_000,
+    }).success).toBe(false);
   });
 });

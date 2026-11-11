@@ -8,8 +8,11 @@ const { prismaMock, txMock, verifyTransactionMock } = vi.hoisted(() => {
       findUnique: vi.fn(),
     },
     paymentEvent: { create: vi.fn() },
-    signingEntitlement: { create: vi.fn() },
+    signingEntitlement: { create: vi.fn(), updateMany: vi.fn() },
     ledgerEntry: { createMany: vi.fn() },
+    user: { findUnique: vi.fn() },
+    emailOutbox: { upsert: vi.fn() },
+    shirt: { findUnique: vi.fn(), updateMany: vi.fn() },
   };
 
   return {
@@ -27,7 +30,10 @@ vi.mock("../../src/config/logger.js", () => ({
   logger: { error: vi.fn() },
 }));
 vi.mock("../../src/config/env.js", () => ({
-  env: { paystackSecretKey: "test-paystack-secret" },
+  env: {
+    paystackSecretKey: "test-paystack-secret",
+    paystackWebhookSecret: "test-webhook-secret",
+  },
 }));
 vi.mock("../../src/lib/signing-access.js", () => ({
   createSigningAccessToken: vi.fn(() => "signing-token"),
@@ -50,7 +56,9 @@ const payment = {
   grossAmountKobo: 600_000,
   ownerAmountKobo: 510_000,
   platformAmountKobo: 90_000,
+  processingFeeKobo: 0,
   shirtId: "shirt-1",
+  contributorEmail: "contributor@example.com",
 };
 
 function signedPayload(payload: unknown) {
@@ -72,7 +80,12 @@ describe("processPaystackWebhook", () => {
     txMock.payment.findUnique.mockResolvedValue({ status: "PAID" });
     txMock.paymentEvent.create.mockResolvedValue({});
     txMock.signingEntitlement.create.mockResolvedValue({});
+    txMock.signingEntitlement.updateMany.mockResolvedValue({ count: 1 });
     txMock.ledgerEntry.createMany.mockResolvedValue({ count: 2 });
+    txMock.user.findUnique.mockResolvedValue(null);
+    txMock.emailOutbox.upsert.mockResolvedValue({});
+    txMock.shirt.findUnique.mockResolvedValue(null);
+    txMock.shirt.updateMany.mockResolvedValue({ count: 0 });
     verifyTransactionMock.mockResolvedValue({
       reference: payment.reference,
       status: "success",
@@ -91,6 +104,7 @@ describe("processPaystackWebhook", () => {
         amount: payment.grossAmountKobo,
         currency: "NGN",
         id: 12345,
+        fees: 9_000,
       },
     });
 
@@ -110,6 +124,10 @@ describe("processPaystackWebhook", () => {
       data: expect.arrayContaining([
         expect.objectContaining({ idempotencyKey: `${payment.reference}:owner-credit` }),
         expect.objectContaining({ idempotencyKey: `${payment.reference}:platform-revenue` }),
+        expect.objectContaining({
+          idempotencyKey: `${payment.reference}:gateway-fee`,
+          amountKobo: -9_000,
+        }),
       ]),
     });
   });
@@ -184,5 +202,85 @@ describe("processPaystackWebhook", () => {
     });
     expect(txMock.signingEntitlement.create).toHaveBeenCalledTimes(1);
     expect(txMock.ledgerEntry.createMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels reconciliation only after Paystack reports an abandoned transaction", async () => {
+    verifyTransactionMock.mockResolvedValue({
+      reference: payment.reference,
+      status: "abandoned",
+      amount: payment.grossAmountKobo,
+      currency: "NGN",
+    });
+    prismaMock.payment.findUnique
+      .mockResolvedValueOnce(payment)
+      .mockResolvedValueOnce({ ...payment, status: "CANCELLED", entitlements: [] });
+
+    await expect(getPaymentStatus(payment.reference)).resolves.toMatchObject({
+      status: "CANCELLED",
+      signing: null,
+    });
+    expect(txMock.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: payment.id, status: "PENDING" },
+      data: { status: "CANCELLED", nextReconciliationAt: null },
+    });
+  });
+
+  it("accepts the timestamped Paystack webhook signature", async () => {
+    txMock.payment.updateMany.mockResolvedValue({ count: 0 });
+    const rawBody = JSON.stringify({
+      event: "charge.success",
+      data: {
+        reference: payment.reference,
+        status: "success",
+        amount: payment.grossAmountKobo,
+        currency: "NGN",
+      },
+    });
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = createHmac("sha512", "test-webhook-secret")
+      .update(`${timestamp}.${rawBody}`)
+      .digest("hex");
+
+    await expect(
+      processPaystackWebhook(rawBody, undefined, `t=${timestamp},v1=whk_test:${signature}`),
+    ).resolves.toMatchObject({ received: true, reference: payment.reference });
+  });
+
+  it("reverses allocations only after a processed refund webhook", async () => {
+    prismaMock.payment.findUnique.mockResolvedValue({
+      ...payment,
+      status: "PAID",
+      refundStatus: "PENDING",
+      refundReference: "SMO-RF-payment-1",
+    });
+    const { rawBody, signature } = signedPayload({
+      event: "refund.processed",
+      data: {
+        status: "processed",
+        transaction_reference: payment.reference,
+        refund_reference: "SMO-RF-payment-1",
+        amount: String(payment.grossAmountKobo),
+        currency: "NGN",
+      },
+    });
+
+    await expect(processPaystackWebhook(rawBody, signature)).resolves.toEqual({
+      received: true,
+      reference: payment.reference,
+      status: "PROCESSED",
+    });
+    expect(txMock.signingEntitlement.updateMany).toHaveBeenCalledWith({
+      where: { paymentId: payment.id, status: "AVAILABLE" },
+      data: { status: "CANCELLED" },
+    });
+    expect(txMock.ledgerEntry.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          entryType: "REFUND_ADJUSTMENT",
+          amountKobo: -payment.ownerAmountKobo,
+        }),
+      ]),
+      skipDuplicates: true,
+    });
   });
 });

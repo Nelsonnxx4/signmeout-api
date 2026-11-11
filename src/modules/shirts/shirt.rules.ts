@@ -1,9 +1,11 @@
+import { shirtPlacementConfigSchema } from "../signatures/placement.rules.js";
+
 // Pure business rules: no database, no HTTP. Easy to unit test.
 
 export type ShirtStatus = "ACTIVE" | "PAUSED" | "FULL" | "ARCHIVED";
 export type ShirtType = "SHORT_SLEEVE" | "LONG_SLEEVE";
 
-// FULL is set by the system (Phase 6, when no space remains). Owners can only archive a full shirt.
+// FULL is set automatically when no signing capacity remains. Owners can only archive it.
 // ARCHIVED is terminal for owners; an admin can restore it. The (owner, type) slot stays used.
 const OWNER_TRANSITIONS: Record<ShirtStatus, ShirtStatus[]> = {
 	ACTIVE: ["PAUSED", "ARCHIVED"],
@@ -15,7 +17,6 @@ const OWNER_TRANSITIONS: Record<ShirtStatus, ShirtStatus[]> = {
 export const canOwnerTransition = (from: ShirtStatus, to: ShirtStatus) =>
 	OWNER_TRANSITIONS[from].includes(to);
 
-/** Phase 6 will also check remaining capacity. */
 export const isSigningAvailable = (status: ShirtStatus) => status === "ACTIVE";
 
 interface PublicShirtSource {
@@ -26,7 +27,8 @@ interface PublicShirtSource {
 		name: string;
 		ownerProfile?: { school?: { name: string; status: string } | null } | null;
 	};
-	modelVersion: { version: number; modelKey: string };
+	modelVersion: { version: number; modelKey: string; placementConfig?: unknown };
+	reservedSigningSlots?: number;
 }
 
 interface PublicSignatureSource {
@@ -46,6 +48,9 @@ interface PublicSignatureSource {
 /** Explicit whitelist. Never spread the database row into a public response. */
 export function toPublicShirt(row: PublicShirtSource) {
 	const school = row.owner.ownerProfile?.school;
+	const placement = shirtPlacementConfigSchema.safeParse(row.modelVersion.placementConfig);
+	const capacity = placement.success ? placement.data.maxSignatures : 0;
+	const remainingSigningSlots = Math.max(0, capacity - (row.reservedSigningSlots ?? 0));
 	return {
 		slug: row.slug,
 		shirtType: row.shirtType,
@@ -57,7 +62,12 @@ export function toPublicShirt(row: PublicShirtSource) {
 			key: row.modelVersion.modelKey,
 		},
 		status: row.status,
-		signingAvailable: isSigningAvailable(row.status),
+		signingAvailable:
+			isSigningAvailable(row.status) &&
+			placement.success &&
+			remainingSigningSlots > 0,
+		signatureCapacity: capacity,
+		remainingSigningSlots,
 	};
 }
 

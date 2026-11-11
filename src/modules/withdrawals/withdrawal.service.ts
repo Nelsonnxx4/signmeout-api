@@ -12,6 +12,7 @@ import {
 } from "../../integrations/paystack/paystack.client.js";
 import { HttpError } from "../../lib/http-error.js";
 import { calculateWithdrawalBalance, WITHDRAWAL_TRANSITIONS } from "./withdrawal.rules.js";
+import { enqueueEmail } from "../notifications/email-outbox.service.js";
 
 const isPrismaErrorCode = (error: unknown, code: string) =>
   typeof error === "object" &&
@@ -33,7 +34,10 @@ async function getLedgerBalance(
     ledger.find((entry) => entry.entryType === entryType)?._sum.amountKobo ?? 0;
 
   return calculateWithdrawalBalance({
-    ownerCreditsKobo: sumFor("OWNER_CREDIT"),
+    ownerCreditsKobo:
+      sumFor("OWNER_CREDIT") +
+      sumFor("REFUND_ADJUSTMENT") +
+      sumFor("CHARGEBACK_ADJUSTMENT"),
     withdrawalHoldsKobo: sumFor("WITHDRAWAL_HOLD"),
     withdrawalReleasesKobo: sumFor("WITHDRAWAL_RELEASE"),
     withdrawalCompletedKobo: sumFor("WITHDRAWAL_COMPLETED"),
@@ -169,6 +173,20 @@ export async function requestWithdrawal(
           },
         });
 
+        const user = await tx.user.findUnique({
+          where: { id: userId },
+          select: { email: true, name: true },
+        });
+        if (user) {
+          await enqueueEmail(tx, {
+            eventType: "withdrawal.requested",
+            recipient: user.email,
+            subject: "Your SignMeOut withdrawal was requested",
+            body: `${user.name}, your withdrawal request for NGN ${(amountKobo / 100).toFixed(2)} was received. You can cancel it before transfer processing starts.`,
+            idempotencyKey: `${withdrawal.id}:owner-request-email`,
+          });
+        }
+
         return withdrawal;
       },
       { isolationLevel: "Serializable" },
@@ -216,6 +234,77 @@ export async function listWithdrawals(userId: string) {
       transferReference: true,
     },
   });
+}
+
+export async function listAdminWithdrawals(input: {
+  cursor?: string;
+  limit: number;
+  status?: "PENDING" | "PROCESSING" | "REQUIRES_ACTION" | "PAID" | "FAILED" | "REVERSED" | "CANCELLED";
+}) {
+  if (input.cursor) {
+    const cursor = await prisma.withdrawal.findUnique({
+      where: { id: input.cursor },
+      select: { id: true },
+    });
+    if (!cursor) throw new HttpError(400, "INVALID_CURSOR", "The pagination cursor is invalid.");
+  }
+
+  const rows = await prisma.withdrawal.findMany({
+    where: input.status ? { status: input.status } : undefined,
+    orderBy: [{ requestedAt: "desc" }, { id: "desc" }],
+    take: input.limit + 1,
+    ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+    include: {
+      alert: {
+        select: {
+          emailSentAt: true,
+          webhookSentAt: true,
+          emailAttempts: true,
+          webhookAttempts: true,
+          emailLastError: true,
+          webhookLastError: true,
+        },
+      },
+    },
+  });
+  const hasMore = rows.length > input.limit;
+  const entries = hasMore ? rows.slice(0, input.limit) : rows;
+  return {
+    entries,
+    nextCursor: hasMore ? entries[entries.length - 1]?.id ?? null : null,
+  };
+}
+
+export async function getWithdrawal(userId: string, withdrawalId: string) {
+  const withdrawal = await prisma.withdrawal.findFirst({
+    where: { id: withdrawalId, userId },
+    select: {
+      id: true,
+      amountKobo: true,
+      status: true,
+      bankName: true,
+      accountName: true,
+      accountNumber: true,
+      requestedAt: true,
+      adminResponseDeadline: true,
+      processedAt: true,
+      failureReason: true,
+      transferReference: true,
+      events: {
+        orderBy: { receivedAt: "asc" },
+        select: { eventType: true, receivedAt: true },
+      },
+    },
+  });
+
+  if (!withdrawal) {
+    throw new HttpError(404, "WITHDRAWAL_NOT_FOUND", "Withdrawal request not found.");
+  }
+
+  return {
+    ...withdrawal,
+    accountNumber: `******${withdrawal.accountNumber.slice(-4)}`,
+  };
 }
 
 export async function cancelWithdrawal(userId: string, withdrawalId: string) {
@@ -401,6 +490,36 @@ async function applyTransferStatus({
           idempotencyKey: `${withdrawal.idempotencyKey}:reversal`,
         },
       });
+    }
+
+    if (["PAID", "FAILED", "REVERSED"].includes(nextStatus)) {
+      const user = await tx.user.findUnique({
+        where: { id: withdrawal.userId },
+        select: { email: true, name: true },
+      });
+      if (user) {
+        const details = nextStatus === "PAID"
+          ? {
+              subject: "Your SignMeOut payout was successful",
+              body: `${user.name}, your payout of NGN ${(withdrawal.amountKobo / 100).toFixed(2)} was completed successfully.`,
+            }
+          : nextStatus === "FAILED"
+            ? {
+                subject: "Your SignMeOut payout failed",
+                body: `${user.name}, your payout of NGN ${(withdrawal.amountKobo / 100).toFixed(2)} failed and the reserved balance has been released.`,
+              }
+            : {
+                subject: "Your SignMeOut payout was reversed",
+                body: `${user.name}, your payout of NGN ${(withdrawal.amountKobo / 100).toFixed(2)} was reversed and your balance has been adjusted.`,
+              };
+        await enqueueEmail(tx, {
+          eventType: `withdrawal.${nextStatus.toLowerCase()}`,
+          recipient: user.email,
+          subject: details.subject,
+          body: details.body,
+          idempotencyKey: `${withdrawal.id}:${nextStatus.toLowerCase()}-email`,
+        });
+      }
     }
 
     if (adminUserId) {

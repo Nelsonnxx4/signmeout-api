@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { prismaMock, txMock } = vi.hoisted(() => {
-  const tx = { studentVerification: { create: vi.fn() } };
+  const tx = {
+    studentVerification: { create: vi.fn() },
+    ownerProfile: { updateMany: vi.fn() },
+    user: { findUnique: vi.fn() },
+    emailOutbox: { upsert: vi.fn() },
+  };
   return {
     txMock: tx,
     prismaMock: {
@@ -17,11 +22,6 @@ const { prismaMock, txMock } = vi.hoisted(() => {
 vi.mock("../../src/config/database.js", () => ({ prisma: prismaMock }));
 vi.mock("../../src/config/logger.js", () => ({
   logger: { error: vi.fn() },
-}));
-vi.mock("../../src/integrations/storage/r2.client.js", () => ({
-  createStudentDocumentUploadUrl: vi.fn(),
-  deleteSignatureAsset: vi.fn(),
-  validateStudentDocumentUpload: vi.fn(),
 }));
 vi.mock("../../src/integrations/paystack/paystack.client.js", () => ({
   PaystackError: class PaystackError extends Error {},
@@ -62,9 +62,11 @@ describe("submitStudentVerification", () => {
       admissionNumber: "2020/12345",
       nickname: "Ada",
       submittedAt: new Date(),
-      documents: [],
     });
     prismaMock.ownerProfile.update.mockResolvedValue({});
+    txMock.ownerProfile.updateMany.mockResolvedValue({ count: 1 });
+    txMock.user.findUnique.mockResolvedValue(null);
+    txMock.emailOutbox.upsert.mockResolvedValue({});
   });
 
   it("auto-approves the submitted identity details and completes onboarding", async () => {
@@ -91,8 +93,8 @@ describe("submitStudentVerification", () => {
     });
     expect(result.steps.studentVerification).toBe(true);
     expect(result.completed).toBe(true);
-    expect(prismaMock.ownerProfile.update).toHaveBeenCalledWith({
-      where: { userId: "user-1" },
+    expect(txMock.ownerProfile.updateMany).toHaveBeenCalledWith({
+      where: { userId: "user-1", onboardingCompletedAt: null },
       data: { onboardingCompletedAt: expect.any(Date) },
     });
   });

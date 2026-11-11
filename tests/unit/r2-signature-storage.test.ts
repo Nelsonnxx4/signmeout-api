@@ -25,7 +25,6 @@ vi.mock("@aws-sdk/client-s3", () => {
     constructor() {}
   }
   return {
-    CopyObjectCommand: class CopyObjectCommand extends Command {},
     DeleteObjectCommand: class DeleteObjectCommand extends Command {},
     GetObjectCommand: class GetObjectCommand extends Command {},
     HeadObjectCommand: class HeadObjectCommand extends Command {},
@@ -40,9 +39,7 @@ vi.mock("@aws-sdk/s3-request-presigner", () => ({
 
 import sharp from "sharp";
 import {
-  createStudentDocumentUploadUrl,
   createSignatureUploadUrl,
-  validateStudentDocumentUpload,
   validateAndStoreSignatureAsset,
 } from "../../src/integrations/storage/r2.client.js";
 
@@ -126,49 +123,4 @@ describe("R2 signature storage", () => {
     ).toBe(false);
   });
 
-  it("creates owner-scoped student document upload URLs", async () => {
-    const result = await createStudentDocumentUploadUrl(entitlementId, "application/pdf", 2048);
-
-    expect(result).toMatchObject({
-      assetKey: expect.stringMatching(new RegExp(`^verification-uploads/${entitlementId}/[0-9a-f-]+\\.pdf$`)),
-      uploadUrl: "https://r2.example/signed-upload",
-      expiresInSeconds: 300,
-      requiredHeaders: {
-        "Content-Type": "application/pdf",
-        "x-amz-meta-owner": entitlementId,
-      },
-    });
-  });
-
-  it("validates and moves a PDF into permanent private student storage", async () => {
-    const pdf = Buffer.from("%PDF-1.7\nstudent record");
-    s3Mock.send.mockImplementation(async (command: { constructor: { name: string } }) => {
-      if (command.constructor.name === "HeadObjectCommand") {
-        return {
-          Metadata: { owner: entitlementId },
-          ContentType: "application/pdf",
-          ContentLength: pdf.length,
-        };
-      }
-      if (command.constructor.name === "GetObjectCommand") {
-        return { Body: { transformToWebStream: () => new Response(pdf).body } };
-      }
-      return {};
-    });
-
-    const documentKey = `verification-uploads/${entitlementId}/00000000-0000-4000-8000-000000000002.pdf`;
-    const result = await validateStudentDocumentUpload(documentKey, entitlementId);
-
-    expect(result).toMatchObject({
-      storageKey: expect.stringMatching(new RegExp(`^student-verifications/${entitlementId}/[0-9a-f-]+\\.pdf$`)),
-      mimeType: "application/pdf",
-      sizeBytes: pdf.length,
-      checksumSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
-    });
-    const copyCommand = s3Mock.send.mock.calls.find(
-      ([command]) => command.constructor.name === "CopyObjectCommand",
-    )?.[0] as { input: { Metadata: { owner: string }; ContentType: string } } | undefined;
-    expect(copyCommand?.input.Metadata.owner).toBe(entitlementId);
-    expect(copyCommand?.input.ContentType).toBe("application/pdf");
-  });
 });

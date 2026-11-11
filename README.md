@@ -37,6 +37,10 @@ npm run db:seed
 npm run dev
 ```
 
+For a deployed database, run `npm run db:deploy` before starting the API. The
+repository includes a non-root, multi-stage `Dockerfile` and a GitHub Actions
+workflow that validates Prisma, typechecks, tests, and builds each change.
+
 Update `DATABASE_URL` in `.env` if your local PostgreSQL credentials differ
 from the example. Paystack and Better Auth secrets are not needed for the
 development foundation. Email OTP messages are printed by the development email
@@ -48,10 +52,10 @@ callback URL with Google:
 production).
 
 The database seed loads the configured university list and the 10 supported
-department choices. The bank dropdown uses the configured catalog in
-`src/modules/banks/bank.service.ts`; account-name resolution still goes through
-Paystack. When changing a bank code, confirm it matches Paystack's current
-account-resolution code for that institution.
+department choices. In production, the bank dropdown is loaded from Paystack's
+supported Nigerian bank directory and account-name resolution is performed by
+Paystack. Development without Paystack credentials uses the local fallback
+catalog.
 
 ## Withdrawal request alerts
 
@@ -97,10 +101,13 @@ Both alerts contain the contributor's full bank account number as configured.
 Restrict mailbox and webhook access, retain payloads only as long as needed,
 and never log the raw alert body.
 
-Onboarding student verification currently accepts full name and admission
-number, with an optional nickname; document upload is not part of this flow.
-Submission is automatically marked approved as self-attestation, not as
-independent proof of student status.
+Onboarding student verification accepts full name and admission number, with an
+optional nickname. Document upload and administrator review are not part of
+this flow. Submission is automatically marked approved as self-attestation,
+not as independent proof of student status.
+
+Interactive OpenAPI documentation is available at `GET /api/v1/docs`, with the
+machine-readable specification at `GET /api/v1/openapi.json`.
 
 Signature uploads require a private Cloudflare R2 bucket configured with
 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and

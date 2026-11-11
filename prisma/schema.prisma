@@ -32,6 +32,7 @@ enum VerificationStatus {
   REQUIRES_RESUBMISSION
 }
 
+// Legacy schema retained for existing deployments. No active API accepts verification documents.
 enum VerificationDocumentType {
   STUDENT_ID
   ADMISSION_LETTER
@@ -56,6 +57,14 @@ enum PaymentStatus {
   FAILED
   CANCELLED
   REFUNDED
+}
+
+enum RefundStatus {
+  NOT_REQUESTED
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
 }
 
 enum SigningEntitlementStatus {
@@ -289,6 +298,7 @@ model StudentVerification {
   @@map("student_verifications")
 }
 
+// Legacy records only; student onboarding now uses self-attestation.
 model VerificationDocument {
   id             String   @id @default(uuid()) @db.Uuid
   verificationId String   @db.Uuid
@@ -349,6 +359,7 @@ model Payment {
   id                    String        @id @default(uuid()) @db.Uuid
   ownerId               String        @db.Uuid
   shirtId               String?       @db.Uuid
+  contributorEmail      String        @db.VarChar(254)
   reference             String        @unique
   provider              String
   providerTransactionId String?
@@ -359,11 +370,20 @@ model Payment {
   grossAmountKobo       Int
   ownerAmountKobo       Int
   platformAmountKobo    Int
+  processingFeeKobo     Int           @default(0)
   ownerBasisPoints      Int           @default(8500)
   platformBasisPoints   Int           @default(1500)
   commissionPolicyVersion String      @default("2026-11-08-15pct-v1")
   status                PaymentStatus @default(PENDING)
+  refundStatus          RefundStatus  @default(NOT_REQUESTED)
+  refundReference       String?       @unique
+  refundReason          String?
+  disputeStatus         String?
+  disputeId             String?
   paidAt                DateTime?
+  expiresAt             DateTime
+  nextReconciliationAt  DateTime?
+  reconciliationAttempts Int         @default(0)
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
@@ -376,6 +396,7 @@ model Payment {
 
   @@index([ownerId, status])
   @@index([shirtId])
+  @@index([status, nextReconciliationAt])
   @@map("payments")
 }
 
@@ -536,4 +557,23 @@ model AdminAuditLog {
   @@index([adminUserId, createdAt])
   @@index([resourceType, resourceId])
   @@map("admin_audit_logs")
+}
+
+model EmailOutbox {
+  id             String    @id @default(uuid()) @db.Uuid
+  eventType      String    @db.VarChar(100)
+  recipient      String    @db.VarChar(254)
+  subject        String    @db.VarChar(200)
+  body           String
+  idempotencyKey String    @unique @db.VarChar(255)
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  lockedUntil    DateTime?
+  sentAt         DateTime?
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([sentAt, nextAttemptAt, lockedUntil])
+  @@map("email_outbox")
 }

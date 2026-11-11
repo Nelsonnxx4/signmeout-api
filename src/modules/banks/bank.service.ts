@@ -1,8 +1,10 @@
 import { HttpError } from "../../lib/http-error.js";
 import {
 	PaystackError,
+	listBanks,
 	resolveAccount,
 } from "../../integrations/paystack/paystack.client.js";
+import { env } from "../../config/env.js";
 
 export const BANK_OPTIONS = [
 	{ code: "044", name: "Access Bank" },
@@ -39,11 +41,21 @@ export const BANK_OPTIONS = [
 const banksByCode = new Map(BANK_OPTIONS.map((bank) => [bank.code, bank]));
 
 export async function getBanks() {
-	return BANK_OPTIONS;
+	if (!env.paystackSecretKey) return BANK_OPTIONS;
+	try {
+		const banks = await listBanks();
+		return banks.map(({ code, name }) => ({ code, name }));
+	} catch (error) {
+		throw mapPaystackError(error);
+	}
 }
 
-export function getBankByCode(bankCode: string) {
-	return banksByCode.get(bankCode as (typeof BANK_OPTIONS)[number]["code"]);
+export async function getBankByCode(bankCode: string) {
+	if (!env.paystackSecretKey) {
+		return banksByCode.get(bankCode as (typeof BANK_OPTIONS)[number]["code"]);
+	}
+	const banks = await getBanks();
+	return banks.find((bank) => bank.code === bankCode);
 }
 
 export async function resolveBankAccount(
