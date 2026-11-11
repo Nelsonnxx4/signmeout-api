@@ -69,7 +69,7 @@ export const auth = betterAuth({
         });
       },
     }),
-    ...(isProd && env.betterAuthApiKey
+    ...(env.nodeEnv !== "test" && env.betterAuthApiKey
       ? [dash({ apiKey: env.betterAuthApiKey })]
       : []),
   ],
