@@ -13,7 +13,7 @@ export const auth = betterAuth({
 	baseURL: env.betterAuthUrl,
 	basePath: "/api/v1/auth",
 	secret: env.betterAuthSecret,
-	trustedOrigins: [env.frontendUrl],
+	trustedOrigins: [env.frontendUrl, "https://dash.better-auth.com"],
 
 	database: prismaAdapter(prisma, { provider: "postgresql" }),
 

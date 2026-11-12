@@ -40,7 +40,7 @@ export const createApp = () => {
   }));
   app.use(
     cors({
-      origin: env.frontendUrl,
+      origin: [env.frontendUrl, "https://dash.better-auth.com"],
       credentials: true,
     }),
   );
