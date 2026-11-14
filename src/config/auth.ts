@@ -1,7 +1,6 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { emailOTP } from "better-auth/plugins";
-import { dash } from "@better-auth/infra";
 import { prisma } from "./database.js";
 import { env } from "./env.js";
 import { emailProvider } from "../integrations/email.provider.js";
@@ -31,15 +30,14 @@ export const auth = betterAuth({
 
 	user: {
 		additionalFields: {
-			// Not settable from the client. Promote admins directly in the database.
 			role: { type: "string", defaultValue: "OWNER", input: false },
 		},
 	},
 
 	session: {
-		expiresIn: 60 * 60 * 24 * 7, // 7 days
-		updateAge: 60 * 60 * 24, // refresh daily
-		cookieCache: { enabled: false }, // revocation takes effect immediately
+		expiresIn: 60 * 60 * 24 * 7,
+		updateAge: 60 * 60 * 24,
+		cookieCache: { enabled: false },
 	},
 
 	rateLimit: {
@@ -69,9 +67,6 @@ export const auth = betterAuth({
 				});
 			},
 		}),
-		...(env.nodeEnv !== "test" && process.env.BETTER_AUTH_API_KEY
-			? [dash({ apiKey: process.env.BETTER_AUTH_API_KEY})]
-			: []),
 	],
 
 	advanced: {
