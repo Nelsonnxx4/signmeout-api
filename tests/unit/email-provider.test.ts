@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ResendEmailProvider } from "../../src/integrations/email.provider.js";
+import {
+  ResendEmailProvider,
+  UnavailableEmailProvider,
+} from "../../src/integrations/email.provider.js";
 
 describe("Resend email provider", () => {
   afterEach(() => {
@@ -48,5 +51,17 @@ describe("Resend email provider", () => {
         text: "Details",
       }),
     ).rejects.toThrow("Resend email delivery failed with HTTP 503.");
+  });
+
+  it("fails safely when production email delivery is not configured", async () => {
+    const provider = new UnavailableEmailProvider();
+
+    await expect(
+      provider.send({
+        to: "student@example.com",
+        subject: "Your sign-in code",
+        text: "A sensitive OTP that must not be logged",
+      }),
+    ).rejects.toThrow("Email delivery is not configured");
   });
 });

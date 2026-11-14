@@ -92,7 +92,8 @@ Keep `PAYSTACK_TRANSFERS_ENABLED=false` until Paystack and compliance approvals
 are recorded. With transfers disabled, requests remain reserved after the
 waiting period and no automatic payout is initiated.
 
-Configure both delivery channels:
+Withdrawal alert delivery is optional. To enable it, configure all of these
+values together:
 
 - `ADMIN_ALERT_EMAIL` is the recipient for withdrawal emails.
 - `RESEND_API_KEY` and `EMAIL_FROM` configure the Resend email provider used
@@ -103,6 +104,11 @@ Configure both delivery channels:
   `X-SignMeOut-Timestamp`, `X-SignMeOut-Signature: sha256=<hex>`, and an
   `Idempotency-Key` header. Verify the signature and reject stale timestamps
   in the receiving service.
+
+Without `RESEND_API_KEY` and `EMAIL_FROM`, the API can still start and Google
+sign-in remains available, but email OTP delivery and queued notification
+emails fail with a configuration error. Production never writes OTP contents
+to the console.
 
 Both alerts contain the contributor's full bank account number as configured.
 Restrict mailbox and webhook access, retain payloads only as long as needed,

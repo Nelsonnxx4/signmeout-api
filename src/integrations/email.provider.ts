@@ -52,11 +52,17 @@ export class ResendEmailProvider implements EmailProvider {
   }
 }
 
-if (env.nodeEnv === "production" && (!env.resendApiKey || !env.emailFrom)) {
-  throw new Error("RESEND_API_KEY and EMAIL_FROM are required in production.");
+export class UnavailableEmailProvider implements EmailProvider {
+  async send(): Promise<never> {
+    throw new Error(
+      "Email delivery is not configured. Configure RESEND_API_KEY and EMAIL_FROM or use Google sign-in.",
+    );
+  }
 }
 
 export const emailProvider: EmailProvider =
-  env.nodeEnv === "production"
-    ? new ResendEmailProvider(env.resendApiKey!, env.emailFrom!)
-    : new ConsoleEmailProvider();
+  env.resendApiKey && env.emailFrom
+    ? new ResendEmailProvider(env.resendApiKey, env.emailFrom)
+    : env.nodeEnv === "production"
+      ? new UnavailableEmailProvider()
+      : new ConsoleEmailProvider();

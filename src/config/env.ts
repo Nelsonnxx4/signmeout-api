@@ -93,34 +93,6 @@ const envSchema = z.object({
       });
     }
 
-    if (!values.ADMIN_ALERT_EMAIL) {
-      context.addIssue({
-        code: "custom",
-        path: ["ADMIN_ALERT_EMAIL"],
-        message: "ADMIN_ALERT_EMAIL is required in production",
-      });
-    }
-
-    if (
-      !values.ADMIN_ALERT_WEBHOOK_URL ||
-      !values.ADMIN_ALERT_WEBHOOK_SECRET ||
-      values.ADMIN_ALERT_WEBHOOK_SECRET.length < 32
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["ADMIN_ALERT_WEBHOOK_SECRET"],
-        message: "Configure an HTTPS ADMIN_ALERT_WEBHOOK_URL and an ADMIN_ALERT_WEBHOOK_SECRET of at least 32 characters",
-      });
-    }
-
-    if (!values.RESEND_API_KEY || !values.EMAIL_FROM) {
-      context.addIssue({
-        code: "custom",
-        path: ["RESEND_API_KEY"],
-        message: "RESEND_API_KEY and EMAIL_FROM are required in production",
-      });
-    }
-
     if (!values.PAYSTACK_SECRET_KEY) {
       context.addIssue({
         code: "custom",
@@ -128,6 +100,17 @@ const envSchema = z.object({
         message: "PAYSTACK_SECRET_KEY is required in production",
       });
     }
+  }
+
+  if (
+    values.ADMIN_ALERT_WEBHOOK_SECRET &&
+    values.ADMIN_ALERT_WEBHOOK_SECRET.length < 32
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["ADMIN_ALERT_WEBHOOK_SECRET"],
+      message: "ADMIN_ALERT_WEBHOOK_SECRET must be at least 32 characters",
+    });
   }
 
   if (
