@@ -67,14 +67,6 @@ const envSchema = z.object({
       });
     }
 
-    if (!values.BETTER_AUTH_API_KEY) {
-      context.addIssue({
-        code: "custom",
-        path: ["BETTER_AUTH_API_KEY"],
-        message: "BETTER_AUTH_API_KEY is required in production",
-      });
-    }
-
     if (!hasGoogleClientId || !hasGoogleClientSecret) {
       context.addIssue({
         code: "custom",
