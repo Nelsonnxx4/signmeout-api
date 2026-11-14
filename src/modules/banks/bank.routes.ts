@@ -16,7 +16,7 @@ const resolveLimiter = rateLimit({
 	keyGenerator: (req) => req.auth!.user.id,
 });
 
-bankRouter.get("/banks", requireAuth, async (_req, res) => {
+bankRouter.get("/banks", async (_req, res) => {
 	res.json({ success: true, data: await getBanks() });
 });
 

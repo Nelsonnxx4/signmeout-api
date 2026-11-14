@@ -5,6 +5,7 @@ import {
 	resolveAccount,
 } from "../../integrations/paystack/paystack.client.js";
 import { env } from "../../config/env.js";
+import { logger } from "../../config/logger.js";
 
 export const BANK_OPTIONS = [
 	{ code: "044", name: "Access Bank" },
@@ -46,7 +47,11 @@ export async function getBanks() {
 		const banks = await listBanks();
 		return banks.map(({ code, name }) => ({ code, name }));
 	} catch (error) {
-		throw mapPaystackError(error);
+		logger.warn(
+			{ err: error },
+			"Paystack bank directory unavailable; using the local bank catalogue",
+		);
+		return BANK_OPTIONS;
 	}
 }
 
