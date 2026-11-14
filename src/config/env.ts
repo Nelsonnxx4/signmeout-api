@@ -25,6 +25,8 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: optionalString,
   PAYSTACK_SECRET_KEY: optionalString,
   PAYSTACK_PUBLIC_KEY: optionalString,
+  // Optional: the newer Paystack-Signature flow uses a whsec_ signing secret.
+  // The legacy x-paystack-signature flow uses PAYSTACK_SECRET_KEY instead.
   PAYSTACK_WEBHOOK_SECRET: optionalString,
   PAYSTACK_TRANSFERS_ENABLED: z.enum(["true", "false"]).default("false"),
   ADMIN_ALERT_EMAIL: z.preprocess(
@@ -124,14 +126,6 @@ const envSchema = z.object({
         code: "custom",
         path: ["PAYSTACK_SECRET_KEY"],
         message: "PAYSTACK_SECRET_KEY is required in production",
-      });
-    }
-
-    if (!values.PAYSTACK_WEBHOOK_SECRET) {
-      context.addIssue({
-        code: "custom",
-        path: ["PAYSTACK_WEBHOOK_SECRET"],
-        message: "PAYSTACK_WEBHOOK_SECRET is required in production",
       });
     }
   }

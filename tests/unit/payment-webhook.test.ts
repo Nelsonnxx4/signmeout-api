@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { prismaMock, txMock, verifyTransactionMock } = vi.hoisted(() => {
+const { envMock, prismaMock, txMock, verifyTransactionMock } = vi.hoisted(() => {
   const tx = {
     payment: {
       updateMany: vi.fn(),
@@ -16,6 +16,10 @@ const { prismaMock, txMock, verifyTransactionMock } = vi.hoisted(() => {
   };
 
   return {
+    envMock: {
+      paystackSecretKey: "test-paystack-secret",
+      paystackWebhookSecret: undefined as string | undefined,
+    },
     txMock: tx,
     verifyTransactionMock: vi.fn(),
     prismaMock: {
@@ -29,12 +33,7 @@ vi.mock("../../src/config/database.js", () => ({ prisma: prismaMock }));
 vi.mock("../../src/config/logger.js", () => ({
   logger: { error: vi.fn() },
 }));
-vi.mock("../../src/config/env.js", () => ({
-  env: {
-    paystackSecretKey: "test-paystack-secret",
-    paystackWebhookSecret: "test-webhook-secret",
-  },
-}));
+vi.mock("../../src/config/env.js", () => ({ env: envMock }));
 vi.mock("../../src/lib/signing-access.js", () => ({
   createSigningAccessToken: vi.fn(() => "signing-token"),
 }));
@@ -72,6 +71,7 @@ function signedPayload(payload: unknown) {
 describe("processPaystackWebhook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    envMock.paystackWebhookSecret = undefined;
     prismaMock.$transaction.mockImplementation(
       async (callback: (client: typeof txMock) => Promise<unknown>) => callback(txMock),
     );
@@ -226,6 +226,7 @@ describe("processPaystackWebhook", () => {
   });
 
   it("accepts the timestamped Paystack webhook signature", async () => {
+    envMock.paystackWebhookSecret = "test-webhook-secret";
     txMock.payment.updateMany.mockResolvedValue({ count: 0 });
     const rawBody = JSON.stringify({
       event: "charge.success",
