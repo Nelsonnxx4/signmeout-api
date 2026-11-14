@@ -52,6 +52,7 @@ export const auth = betterAuth({
 	},
 
 	onAPIError: {
+		errorURL: env.frontendUrl,
 		onError: (error) => {
 			logger.error({ err: error }, "Better Auth API request failed");
 		},
@@ -83,7 +84,7 @@ export const auth = betterAuth({
 		},
 		defaultCookieAttributes: {
 			httpOnly: true,
-			sameSite: "lax",
+			sameSite: isProd ? "none" : "lax",
 			secure: isProd,
 		},
 	},
