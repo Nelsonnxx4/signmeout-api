@@ -3,6 +3,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { emailOTP } from "better-auth/plugins";
 import { prisma } from "./database.js";
 import { env } from "./env.js";
+import { logger } from "./logger.js";
 import { emailProvider } from "../integrations/email.provider.js";
 
 const isProd = env.nodeEnv === "production";
@@ -50,6 +51,12 @@ export const auth = betterAuth({
 		},
 	},
 
+	onAPIError: {
+		onError: (error) => {
+			logger.error({ err: error }, "Better Auth API request failed");
+		},
+	},
+
 	plugins: [
 		emailOTP({
 			otpLength: 6,
@@ -71,6 +78,9 @@ export const auth = betterAuth({
 
 	advanced: {
 		useSecureCookies: isProd,
+		database: {
+			generateId: "uuid",
+		},
 		defaultCookieAttributes: {
 			httpOnly: true,
 			sameSite: "lax",
