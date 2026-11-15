@@ -23,9 +23,9 @@ interface PublicShirtSource {
 	slug: string;
 	shirtType: ShirtType;
 	status: ShirtStatus;
-	owner: {
-		name: string;
-		ownerProfile?: { school?: { name: string; status: string } | null } | null;
+	ownerProfile: {
+		user: { name: string };
+		school?: { name: string; status: string } | null;
 	};
 	modelVersion: { version: number; modelKey: string; placementConfig?: unknown };
 	reservedSigningSlots?: number;
@@ -47,14 +47,14 @@ interface PublicSignatureSource {
 
 /** Explicit whitelist. Never spread the database row into a public response. */
 export function toPublicShirt(row: PublicShirtSource) {
-	const school = row.owner.ownerProfile?.school;
+	const school = row.ownerProfile.school;
 	const placement = shirtPlacementConfigSchema.safeParse(row.modelVersion.placementConfig);
 	const capacity = placement.success ? placement.data.maxSignatures : 0;
 	const remainingSigningSlots = Math.max(0, capacity - (row.reservedSigningSlots ?? 0));
 	return {
 		slug: row.slug,
 		shirtType: row.shirtType,
-		ownerName: row.owner.name,
+		ownerName: row.ownerProfile.user.name,
 		// Pending (unreviewed, user-typed) school names are not shown publicly.
 		school: school && school.status === "APPROVED" ? school.name : null,
 		model: {

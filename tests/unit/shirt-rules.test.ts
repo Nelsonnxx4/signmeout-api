@@ -8,11 +8,9 @@ describe("public shirt transforms", () => {
       slug: "alpha-123",
       shirtType: "SHORT_SLEEVE",
       status: "ACTIVE",
-      owner: {
-        name: "Ada",
-        ownerProfile: {
-          school: { name: "University of Lagos", status: "APPROVED" },
-        },
+      ownerProfile: {
+        user: { name: "Ada" },
+        school: { name: "University of Lagos", status: "APPROVED" },
       },
       modelVersion: {
         version: 7,
@@ -74,7 +72,7 @@ describe("public shirt transforms", () => {
       slug: "not-ready",
       shirtType: "SHORT_SLEEVE",
       status: "ACTIVE",
-      owner: { name: "Ada" },
+      ownerProfile: { user: { name: "Ada" } },
       modelVersion: { version: 1, modelKey: "short-v1", placementConfig: null },
     });
 

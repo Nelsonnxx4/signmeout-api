@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "../../config/database.js";
 import { env } from "../../config/env.js";
 import { HttpError } from "../../lib/http-error.js";
@@ -22,6 +24,26 @@ const ownerSelect = {
 	updatedAt: true,
 	modelVersion: { select: { version: true, modelKey: true } },
 } as const;
+
+const publicShirtSelect = {
+	slug: true,
+	shirtType: true,
+	status: true,
+	modelVersion: {
+		select: { version: true, modelKey: true, placementConfig: true },
+	},
+	_count: {
+		select: {
+			payments: { where: { status: { in: ["PENDING", "PAID"] } } },
+		},
+	},
+	ownerProfile: {
+		select: {
+			user: { select: { name: true } },
+			school: { select: { name: true, status: true } },
+		},
+	},
+} satisfies Prisma.ShirtSelect;
 
 type OwnerRow = {
 	id: string;
@@ -157,25 +179,7 @@ export async function updateShirtStatus(
 export async function getPublicShirt(slug: string) {
 	const row = await prisma.shirt.findUnique({
 		where: { slug },
-		select: {
-			slug: true,
-			shirtType: true,
-			status: true,
-			modelVersion: { select: { version: true, modelKey: true, placementConfig: true } },
-			_count: {
-				select: {
-					payments: { where: { status: { in: ["PENDING", "PAID"] } } },
-				},
-			},
-			owner: {
-				select: {
-					name: true,
-					ownerProfile: {
-						select: { school: { select: { name: true, status: true } } },
-					},
-				},
-			},
-		},
+		select: publicShirtSelect,
 	});
 	if (!row || row.status === "ARCHIVED")
 		throw new HttpError(404, "SHIRT_NOT_FOUND", "Shirt not found.");
