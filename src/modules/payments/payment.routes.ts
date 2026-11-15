@@ -11,11 +11,15 @@ import {
 export const paymentRouter = Router();
 
 paymentRouter.post("/public/shirts/:slug/checkout", async (req, res) => {
-  const { contributorEmail, giftAmountKobo, signatureSize } = parseOrThrow(checkoutSchema, req.body);
+  const { contributorName, contributorEmail, giftAmountKobo, signatureSize } = parseOrThrow(
+    checkoutSchema,
+    req.body,
+  );
   const slug = String(req.params.slug);
 
   const result = await createCheckout({
     shirtSlug: slug,
+    contributorName,
     contributorEmail,
     giftAmountKobo,
     signatureSize,

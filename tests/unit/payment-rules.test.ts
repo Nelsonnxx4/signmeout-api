@@ -31,4 +31,25 @@ describe("calculateCheckoutTotals", () => {
       giftAmountKobo: 200_000,
     }).success).toBe(false);
   });
+
+  it("accepts an optional contributor name and normalizes a blank name", () => {
+    const named = checkoutSchema.parse({
+      contributorName: "  Ada Lovelace  ",
+      contributorEmail: "friend@example.com",
+      giftAmountKobo: 200_000,
+    });
+    const anonymous = checkoutSchema.parse({
+      contributorName: "   ",
+      contributorEmail: "friend@example.com",
+      giftAmountKobo: 200_000,
+    });
+
+    expect(named.contributorName).toBe("Ada Lovelace");
+    expect(anonymous.contributorName).toBeUndefined();
+    expect(checkoutSchema.safeParse({
+      contributorName: "a".repeat(101),
+      contributorEmail: "friend@example.com",
+      giftAmountKobo: 200_000,
+    }).success).toBe(false);
+  });
 });

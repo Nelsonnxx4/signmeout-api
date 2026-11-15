@@ -43,6 +43,7 @@ export async function getDashboardSummary(userId: string) {
           rotation: true,
           scale: true,
           submittedAt: true,
+          payment: { select: { contributorName: true } },
           shirt: { select: { slug: true, shirtType: true } },
         },
       }),
@@ -73,7 +74,10 @@ export async function getDashboardSummary(userId: string) {
         reviewReason: null,
       },
     recentTransactions: recentPayments,
-    recentSignatures,
+    recentSignatures: recentSignatures.map(({ payment, ...signature }) => ({
+      ...signature,
+      contributorName: payment.contributorName,
+    })),
     withdrawals,
   };
 }

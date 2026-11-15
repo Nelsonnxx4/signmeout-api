@@ -257,11 +257,13 @@ export async function getPaymentStatus(reference: string) {
 
 export async function createCheckout({
   shirtSlug,
+  contributorName,
   contributorEmail,
   giftAmountKobo,
   signatureSize,
 }: {
   shirtSlug: string;
+  contributorName?: string;
   contributorEmail: string;
   giftAmountKobo: number;
   signatureSize?: number;
@@ -317,6 +319,7 @@ export async function createCheckout({
           data: {
             ownerId: shirt.ownerId,
             shirtId: shirt.id,
+            contributorName,
             contributorEmail,
             reference: paymentReference,
             provider: "PAYSTACK",

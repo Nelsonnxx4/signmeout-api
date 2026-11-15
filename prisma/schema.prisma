@@ -360,6 +360,7 @@ model Payment {
   ownerId               String        @db.Uuid
   shirtId               String?       @db.Uuid
   contributorEmail      String        @db.VarChar(254)
+  contributorName       String?       @db.VarChar(100)
   reference             String        @unique
   provider              String
   providerTransactionId String?

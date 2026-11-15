@@ -11,6 +11,12 @@ export const SIGNATURE_SIZE_FEES_KOBO = {
 } as const;
 
 export const checkoutSchema = z.object({
+  contributorName: z
+    .string()
+    .trim()
+    .max(100)
+    .optional()
+    .transform((value) => value || undefined),
   contributorEmail: z.string().trim().email().max(254),
   giftAmountKobo: z.number().int().positive().min(MIN_GIFT_KOBO).max(MAX_PAYMENT_KOBO - 100_000),
   signatureSize: z

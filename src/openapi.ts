@@ -53,6 +53,11 @@ export const openApiDocument = {
         type: "object",
         required: ["contributorEmail", "giftAmountKobo"],
         properties: {
+          contributorName: {
+            type: "string",
+            maxLength: 100,
+            description: "Optional name shown only to the shirt owner.",
+          },
           contributorEmail: { type: "string", format: "email" },
           giftAmountKobo: { type: "integer", minimum: 200000 },
           signatureSize: { type: "integer", minimum: 1, maximum: 4, default: 1 },

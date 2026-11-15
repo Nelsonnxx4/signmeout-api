@@ -75,6 +75,7 @@ describe("createCheckout", () => {
   it("uses the contributor's email and reserves a configured signing slot", async () => {
     const result = await createCheckout({
       shirtSlug: shirt.slug,
+      contributorName: "Ada Lovelace",
       contributorEmail: "friend@example.com",
       giftAmountKobo: 200_000,
       signatureSize: 1,
@@ -82,6 +83,11 @@ describe("createCheckout", () => {
 
     expect(initializeTransactionMock).toHaveBeenCalledWith(
       expect.objectContaining({ email: "friend@example.com" }),
+    );
+    expect(txMock.payment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ contributorName: "Ada Lovelace" }),
+      }),
     );
     expect(result.authorizationUrl).toContain("paystack.test");
   });
