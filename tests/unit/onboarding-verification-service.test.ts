@@ -26,7 +26,6 @@ vi.mock("../../src/config/logger.js", () => ({
 vi.mock("../../src/integrations/paystack/paystack.client.js", () => ({
   PaystackError: class PaystackError extends Error {},
   createTransferRecipient: vi.fn(),
-  listBanks: vi.fn(),
   resolveAccount: vi.fn(),
 }));
 vi.mock("../../src/modules/banks/bank.service.js", () => ({

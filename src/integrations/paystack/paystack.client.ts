@@ -2,7 +2,6 @@
 
 const BASE_URL = "https://api.paystack.co";
 const TIMEOUT_MS = 10_000;
-const BANK_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export class PaystackError extends Error {
   constructor(message: string, public readonly status: number) {
@@ -10,19 +9,10 @@ export class PaystackError extends Error {
   }
 }
 
-export interface PaystackBank {
-  name: string;
-  code: string;
-  slug: string;
-  active: boolean;
-  type: string;
-}
-
 interface Envelope<T> {
   status: boolean;
   message: string;
   data: T;
-  meta?: { next?: string | null };
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<Envelope<T>> {
@@ -47,50 +37,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<Envelop
   }
 
   return body;
-}
-
-let bankCache: { banks: PaystackBank[]; expires: number } | null = null;
-let inflight: Promise<PaystackBank[]> | null = null;
-
-async function fetchAllBanks(): Promise<PaystackBank[]> {
-  const all: PaystackBank[] = [];
-  let next: string | null | undefined;
-
-  do {
-    const qs = new URLSearchParams({
-      country: "nigeria",
-      currency: "NGN",
-      perPage: "100",
-      use_cursor: "true",
-    });
-
-    if (next) qs.set("next", next);
-
-    const page = await request<PaystackBank[]>(`/bank?${qs}`);
-    all.push(...page.data);
-    next = page.meta?.next;
-  } while (next);
-
-  return all.filter((b) => b.active).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export async function listBanks(): Promise<PaystackBank[]> {
-  if (bankCache && bankCache.expires > Date.now()) return bankCache.banks;
-
-  inflight ??= fetchAllBanks()
-    .then((banks) => {
-      bankCache = { banks, expires: Date.now() + BANK_CACHE_TTL_MS };
-      return banks;
-    })
-    .finally(() => {
-      inflight = null;
-    });
-
-  return inflight;
-}
-
-export function clearBankCache() {
-  bankCache = null;
 }
 
 export async function resolveAccount(accountNumber: string, bankCode: string) {

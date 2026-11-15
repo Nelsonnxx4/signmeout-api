@@ -36,6 +36,10 @@ describe("public shirt transforms", () => {
       ownerName: "Ada",
       school: "University of Lagos",
       signingAvailable: true,
+      placementConfig: {
+        version: 7,
+        maxSignatures: 200,
+      },
     });
     expect(publicShirt).not.toHaveProperty("ownerProfile");
   });
@@ -75,6 +79,7 @@ describe("public shirt transforms", () => {
     });
 
     expect(publicShirt.signingAvailable).toBe(false);
+    expect(publicShirt.placementConfig).toBeNull();
     expect(publicShirt.remainingSigningSlots).toBe(0);
   });
 });

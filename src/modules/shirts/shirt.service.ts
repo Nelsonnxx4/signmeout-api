@@ -213,6 +213,6 @@ export async function listPublicSignatures(slug: string) {
 
 	return row.signatures.map((signature) => ({
 		...toPublicSignature(signature),
-		assetUrl: `${env.betterAuthUrl}/api/v1/public/signatures/${signature.id}/asset`,
+		assetUrl: `/api/v1/public/signatures/${signature.id}/asset`,
 	}));
 }

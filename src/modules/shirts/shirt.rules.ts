@@ -61,6 +61,7 @@ export function toPublicShirt(row: PublicShirtSource) {
 			version: row.modelVersion.version,
 			key: row.modelVersion.modelKey,
 		},
+		placementConfig: placement.success ? placement.data : null,
 		status: row.status,
 		signingAvailable:
 			isSigningAvailable(row.status) &&

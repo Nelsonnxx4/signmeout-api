@@ -125,14 +125,17 @@ machine-readable specification at `GET /api/v1/openapi.json`.
 Signature uploads require a private Cloudflare R2 bucket configured with
 `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and
 `R2_BUCKET_NAME`. Configure the bucket CORS policy to permit the frontend
-origin to `PUT` the signed upload URL with the returned `Content-Type` and
-`x-amz-meta-entitlement` or `x-amz-meta-owner` headers. The backend validates and re-encodes the
-uploaded PNG/JPEG/WebP before making it available.
+origin to `GET` signature images and to `PUT` signed upload URLs with the
+returned `Content-Type` and `x-amz-meta-entitlement` or `x-amz-meta-owner`
+headers. The backend validates and re-encodes the uploaded PNG/JPEG/WebP before
+making it available.
 Configure an R2 lifecycle rule to delete abandoned objects under the
 `signature-uploads/` prefix after 24 hours.
 
-Every `ShirtModelVersion` needs an administrator-supplied `placementConfig`
-before signing is enabled. Set it with
+The database seed installs the frontend-owned v2 shirt model keys and their
+approved front/back UV placement configuration. Future `ShirtModelVersion`
+records still need an administrator-supplied `placementConfig` before signing
+is enabled. Set it with
 `PUT /api/v1/admin/shirt-models/:id/placement-config`; the configuration
 contains a version and normalized UV bounds, restricted regions, and maximum
 signature dimensions for each surface. Missing configuration intentionally

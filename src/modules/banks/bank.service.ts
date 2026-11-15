@@ -1,11 +1,8 @@
 import { HttpError } from "../../lib/http-error.js";
 import {
 	PaystackError,
-	listBanks,
 	resolveAccount,
 } from "../../integrations/paystack/paystack.client.js";
-import { env } from "../../config/env.js";
-import { logger } from "../../config/logger.js";
 
 export const BANK_OPTIONS = [
 	{ code: "044", name: "Access Bank" },
@@ -42,25 +39,11 @@ export const BANK_OPTIONS = [
 const banksByCode = new Map(BANK_OPTIONS.map((bank) => [bank.code, bank]));
 
 export async function getBanks() {
-	if (!env.paystackSecretKey) return BANK_OPTIONS;
-	try {
-		const banks = await listBanks();
-		return banks.map(({ code, name }) => ({ code, name }));
-	} catch (error) {
-		logger.warn(
-			{ err: error },
-			"Paystack bank directory unavailable; using the local bank catalogue",
-		);
-		return BANK_OPTIONS;
-	}
+	return BANK_OPTIONS;
 }
 
 export async function getBankByCode(bankCode: string) {
-	if (!env.paystackSecretKey) {
-		return banksByCode.get(bankCode as (typeof BANK_OPTIONS)[number]["code"]);
-	}
-	const banks = await getBanks();
-	return banks.find((bank) => bank.code === bankCode);
+	return banksByCode.get(bankCode as (typeof BANK_OPTIONS)[number]["code"]);
 }
 
 export async function resolveBankAccount(

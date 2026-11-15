@@ -3,13 +3,13 @@ import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
 
 vi.mock("../../src/config/env.js", () => ({
-  env: { nodeEnv: "test", paystackSecretKey: undefined },
+	env: { nodeEnv: "test", paystackSecretKey: "sk_test_configured" },
 }));
 
 import { BANK_OPTIONS, getBankByCode, getBanks } from "../../src/modules/banks/bank.service.js";
 
 describe("configured bank options", () => {
-	it("returns the configured frontend bank catalog in order", async () => {
+	it("returns only the curated bank catalog even when Paystack is configured", async () => {
 		await expect(getBanks()).resolves.toEqual(BANK_OPTIONS);
 		expect(BANK_OPTIONS).toHaveLength(29);
 	});
