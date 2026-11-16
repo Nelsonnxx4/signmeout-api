@@ -132,6 +132,22 @@ making it available.
 Configure an R2 lifecycle rule to delete abandoned objects under the
 `signature-uploads/` prefix after 24 hours.
 
+The signature playground reads its supported palette and pen widths from
+`GET /api/v1/signing/options`. A signature submission may include `inkColor`
+(`red`, `green`, `black`, `blue`, or `purple`) and `penWidthMm` (`1.5`, `2.5`,
+or `3.5`). Black and 2.5 mm are the backwards-compatible defaults.
+
+Owners can poll `GET /api/v1/shirts/:id/signatures` to refresh the 3D shirt
+after a visitor finishes signing. This authenticated response includes the
+optional contributor name; the public signature response does not.
+
+The browser is responsible for rendering the GLB shirt because the API does
+not run WebGL. To download the rendered view, send the PNG or JPEG capture as
+the raw request body to
+`POST /api/v1/shirts/:id/exports?format=png|jpeg|pdf`. The authenticated API
+validates the image, verifies shirt ownership, and returns the requested file
+as an attachment. Captures are limited to 12 MB and 4096 by 4096 pixels.
+
 The database seed installs the frontend-owned v2 shirt model keys and their
 approved front/back UV placement configuration. Future `ShirtModelVersion`
 records still need an administrator-supplied `placementConfig` before signing

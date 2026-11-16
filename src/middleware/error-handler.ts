@@ -55,6 +55,23 @@ export const errorHandler: ErrorRequestHandler = (
     return;
   }
 
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "type" in error &&
+    error.type === "entity.too.large"
+  ) {
+    response.status(413).json({
+      success: false,
+      error: {
+        code: "PAYLOAD_TOO_LARGE",
+        message: "The uploaded file is too large.",
+      },
+      requestId: response.locals.requestId,
+    });
+    return;
+  }
+
   logger.error(
     {
       error,

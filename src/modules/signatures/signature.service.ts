@@ -13,10 +13,18 @@ import {
   validateSignaturePlacement,
   type SignaturePlacement,
 } from "./placement.rules.js";
+import {
+  DEFAULT_SIGNATURE_INK_COLOR,
+  DEFAULT_SIGNATURE_PEN_WIDTH_MM,
+  type SignatureInkColor,
+  type SignaturePenWidthMm,
+} from "./signature-options.js";
 
 type CreatedSignature = {
   id: string;
   shirtId: string;
+  inkColor: string;
+  penWidthMm: number;
   surfaceId: string;
   uvX: number;
   uvY: number;
@@ -84,6 +92,8 @@ export async function createSignatureUpload({
 export async function createSignature({
   accessToken,
   assetKey,
+  inkColor = DEFAULT_SIGNATURE_INK_COLOR,
+  penWidthMm = DEFAULT_SIGNATURE_PEN_WIDTH_MM,
   surfaceId,
   uvX,
   uvY,
@@ -94,6 +104,8 @@ export async function createSignature({
 }: {
   accessToken: string;
   assetKey: string;
+  inkColor?: SignatureInkColor;
+  penWidthMm?: SignaturePenWidthMm;
   surfaceId: string;
   uvX: number;
   uvY: number;
@@ -156,6 +168,8 @@ export async function createSignature({
             paymentId: entitlement.paymentId,
             entitlementId: entitlement.id,
             assetKey: canonicalAssetKey,
+            inkColor,
+            penWidthMm,
             surfaceId,
             uvX,
             uvY,
@@ -167,6 +181,8 @@ export async function createSignature({
           select: {
             id: true,
             shirtId: true,
+            inkColor: true,
+            penWidthMm: true,
             surfaceId: true,
             uvX: true,
             uvY: true,

@@ -439,6 +439,8 @@ model Signature {
   paymentId     String                    @db.Uuid
   entitlementId String                    @unique @db.Uuid
   assetKey      String
+  inkColor      String                    @default("black") @db.VarChar(16)
+  penWidthMm    Float                     @default(2.5)
   surfaceId     String
   uvX           Float
   uvY           Float

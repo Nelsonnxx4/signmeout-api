@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  DEFAULT_SIGNATURE_INK_COLOR,
+  DEFAULT_SIGNATURE_PEN_WIDTH_MM,
+  SIGNATURE_INK_COLOR_IDS,
+} from "./signature-options.js";
+
 export const resumeSigningSchema = z.object({
   reference: z.string().trim().min(20).max(160),
 });
@@ -7,6 +13,10 @@ export const resumeSigningSchema = z.object({
 export const createSignatureSchema = z.object({
   surfaceId: z.string().min(1),
   assetKey: z.string().min(1).max(500),
+  inkColor: z.enum(SIGNATURE_INK_COLOR_IDS).default(DEFAULT_SIGNATURE_INK_COLOR),
+  penWidthMm: z
+    .union([z.literal(1.5), z.literal(2.5), z.literal(3.5)])
+    .default(DEFAULT_SIGNATURE_PEN_WIDTH_MM),
   uvX: z.number().finite().min(0).max(1),
   uvY: z.number().finite().min(0).max(1),
   width: z.number().positive().max(1),

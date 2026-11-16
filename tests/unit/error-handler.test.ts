@@ -49,4 +49,29 @@ describe("errorHandler", () => {
 
     throw new Error("Expected invalid data to throw.");
   });
+
+  it("returns 413 for an oversized raw image upload", () => {
+    const response = {
+      locals: { requestId: "request-456" },
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+    };
+
+    errorHandler(
+      { type: "entity.too.large" },
+      { id: "request-456", method: "POST", originalUrl: "/shirts/1/exports" } as never,
+      response as never,
+      vi.fn(),
+    );
+
+    expect(response.status).toHaveBeenCalledWith(413);
+    expect(response.json).toHaveBeenCalledWith({
+      success: false,
+      error: {
+        code: "PAYLOAD_TOO_LARGE",
+        message: "The uploaded file is too large.",
+      },
+      requestId: "request-456",
+    });
+  });
 });

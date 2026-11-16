@@ -96,8 +96,29 @@ describe("createSignature", () => {
       data: expect.objectContaining({
         assetKey: "signatures/entitlement-1/00000000-0000-4000-8000-000000000002.webp",
         entitlementId: "entitlement-1",
+        inkColor: "black",
+        penWidthMm: 2.5,
       }),
       select: expect.any(Object),
+    });
+  });
+
+  it("stores the selected playground color and pen width", async () => {
+    await createSignature({
+      ...input,
+      inkColor: "purple",
+      penWidthMm: 3.5,
+    });
+
+    expect(txMock.signature.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        inkColor: "purple",
+        penWidthMm: 3.5,
+      }),
+      select: expect.objectContaining({
+        inkColor: true,
+        penWidthMm: true,
+      }),
     });
   });
 

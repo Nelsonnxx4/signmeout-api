@@ -63,6 +63,30 @@ export const openApiDocument = {
           signatureSize: { type: "integer", minimum: 1, maximum: 4, default: 1 },
         },
       },
+      SignatureSubmission: {
+        type: "object",
+        required: ["surfaceId", "assetKey", "uvX", "uvY", "width", "height", "rotation", "scale"],
+        properties: {
+          surfaceId: { type: "string" },
+          assetKey: { type: "string" },
+          inkColor: {
+            type: "string",
+            enum: ["red", "green", "black", "blue", "purple"],
+            default: "black",
+          },
+          penWidthMm: {
+            type: "number",
+            enum: [1.5, 2.5, 3.5],
+            default: 2.5,
+          },
+          uvX: { type: "number", minimum: 0, maximum: 1 },
+          uvY: { type: "number", minimum: 0, maximum: 1 },
+          width: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+          height: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+          rotation: { type: "number", minimum: -360, maximum: 360 },
+          scale: { type: "number", exclusiveMinimum: 0, maximum: 4 },
+        },
+      },
       StudentSelfAttestation: {
         type: "object",
         required: ["fullName", "admissionNumber"],
@@ -98,14 +122,69 @@ export const openApiDocument = {
       get: { tags: ["Shirts"], security: secured, summary: "Get an owned shirt", responses: ok() },
       patch: { tags: ["Shirts"], security: secured, summary: "Change shirt status", responses: ok() },
     },
+    "/shirts/{id}/signatures": {
+      parameters: idParameter,
+      get: {
+        tags: ["Signatures"],
+        security: secured,
+        summary: "List an owner's signatures with contributor names",
+        responses: ok(),
+      },
+    },
+    "/shirts/{id}/exports": {
+      parameters: [
+        ...idParameter,
+        {
+          in: "query",
+          name: "format",
+          required: true,
+          schema: { type: "string", enum: ["png", "jpeg", "pdf"] },
+        },
+      ],
+      post: {
+        tags: ["Shirts"],
+        security: secured,
+        summary: "Convert a rendered 3D shirt capture into a downloadable file",
+        requestBody: {
+          required: true,
+          content: {
+            "image/png": { schema: { type: "string", format: "binary" } },
+            "image/jpeg": { schema: { type: "string", format: "binary" } },
+          },
+        },
+        responses: {
+          ...ok(),
+          "200": {
+            description: "PNG, JPEG, or PDF attachment",
+            content: {
+              "image/png": { schema: { type: "string", format: "binary" } },
+              "image/jpeg": { schema: { type: "string", format: "binary" } },
+              "application/pdf": { schema: { type: "string", format: "binary" } },
+            },
+          },
+        },
+      },
+    },
     "/public/shirts/{slug}": { parameters: slugParameter, get: { tags: ["Shirts"], summary: "Get public shirt", responses: ok() } },
     "/public/shirts/{slug}/signatures": { parameters: slugParameter, get: { tags: ["Signatures"], summary: "List public shirt signatures", responses: ok() } },
     "/public/shirts/{slug}/checkout": { parameters: slugParameter, post: { tags: ["Payments"], summary: "Initialize Paystack checkout", requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/Checkout" } } } }, responses: created } },
     "/payments/{reference}/status": { parameters: referenceParameter, get: { tags: ["Payments"], summary: "Verify or retrieve payment status", responses: ok() } },
     "/webhooks/paystack": { post: { tags: ["Payments"], summary: "Receive signed Paystack events", responses: ok() } },
+    "/signing/options": { get: { tags: ["Signatures"], summary: "Get signature colors and pen widths", responses: ok() } },
     "/signing/resume": { post: { tags: ["Signatures"], summary: "Resume signing by payment reference", responses: ok() } },
     "/signing/assets": { post: { tags: ["Signatures"], security: [{ signingToken: [] }], summary: "Create a signature upload", responses: created } },
-    "/signatures": { post: { tags: ["Signatures"], security: [{ signingToken: [] }], summary: "Place a paid signature", responses: created } },
+    "/signatures": {
+      post: {
+        tags: ["Signatures"],
+        security: [{ signingToken: [] }],
+        summary: "Place a paid signature",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { $ref: "#/components/schemas/SignatureSubmission" } } },
+        },
+        responses: created,
+      },
+    },
     "/public/signatures/{id}/asset": { parameters: idParameter, get: { tags: ["Signatures"], summary: "Read a public signature image", responses: { ...ok(), "200": { description: "Signature image" } } } },
     "/dashboard/summary": { get: { tags: ["Wallet"], security: secured, summary: "Get dashboard summary", responses: ok() } },
     "/wallet/balance": { get: { tags: ["Wallet"], security: secured, summary: "Get wallet balance", responses: ok() } },

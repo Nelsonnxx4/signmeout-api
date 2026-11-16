@@ -1,4 +1,8 @@
 import { shirtPlacementConfigSchema } from "../signatures/placement.rules.js";
+import {
+	DEFAULT_SIGNATURE_INK_COLOR,
+	DEFAULT_SIGNATURE_PEN_WIDTH_MM,
+} from "../signatures/signature-options.js";
 
 // Pure business rules: no database, no HTTP. Easy to unit test.
 
@@ -34,6 +38,8 @@ interface PublicShirtSource {
 interface PublicSignatureSource {
 	id: string;
 	assetKey: string;
+	inkColor?: string;
+	penWidthMm?: number;
 	surfaceId: string;
 	uvX: number;
 	uvY: number;
@@ -75,6 +81,8 @@ export function toPublicShirt(row: PublicShirtSource) {
 export function toPublicSignature(row: PublicSignatureSource) {
 	return {
 		id: row.id,
+		inkColor: row.inkColor ?? DEFAULT_SIGNATURE_INK_COLOR,
+		penWidthMm: row.penWidthMm ?? DEFAULT_SIGNATURE_PEN_WIDTH_MM,
 		surfaceId: row.surfaceId,
 		position: {
 			x: row.uvX,

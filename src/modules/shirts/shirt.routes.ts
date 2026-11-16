@@ -1,13 +1,16 @@
-import { Router } from "express";
+import { raw, Router } from "express";
 import rateLimit from "express-rate-limit";
 import { requireAuth } from "../../middleware/auth.js";
 import { HttpError, parseOrThrow } from "../../lib/http-error.js";
+import { shirtExportQuerySchema } from "./shirt-export.schema.js";
+import { createShirtExport } from "./shirt-export.service.js";
 import { createShirtSchema, updateShirtSchema } from "./shirt.schema.js";
 import { SLUG_PATTERN } from "./shirt.slug.js";
 import {
 	createShirt,
 	getPublicShirt,
 	getShirt,
+	listOwnerSignatures,
 	listPublicSignatures,
 	listShirts,
 	updateShirtStatus,
@@ -16,6 +19,13 @@ import {
 // ---- Owner (authenticated) ----
 export const shirtRouter = Router();
 shirtRouter.use("/shirts", requireAuth);
+
+const exportLimiter = rateLimit({
+	windowMs: 60_000,
+	limit: 10,
+	standardHeaders: true,
+	legacyHeaders: false,
+});
 
 shirtRouter.post("/shirts", async (req, res) => {
 	const { shirtType } = parseOrThrow(createShirtSchema, req.body);
@@ -30,6 +40,38 @@ shirtRouter.post("/shirts", async (req, res) => {
 shirtRouter.get("/shirts", async (req, res) => {
 	res.json({ success: true, data: await listShirts(req.auth!.user.id) });
 });
+
+shirtRouter.get("/shirts/:id/signatures", async (req, res) => {
+	res.setHeader("Cache-Control", "private, no-store");
+	res.json({
+		success: true,
+		data: await listOwnerSignatures(
+			req.auth!.user.id,
+			String(req.params.id),
+		),
+	});
+});
+
+shirtRouter.post(
+	"/shirts/:id/exports",
+	exportLimiter,
+	raw({ type: ["image/png", "image/jpeg"], limit: "12mb" }),
+	async (req, res) => {
+		const { format } = parseOrThrow(shirtExportQuerySchema, req.query);
+		const result = await createShirtExport({
+			ownerId: req.auth!.user.id,
+			shirtId: String(req.params.id),
+			format,
+			image: req.body,
+		});
+
+		res.setHeader("Cache-Control", "private, no-store");
+		res.setHeader("Content-Type", result.contentType);
+		res.setHeader("Content-Disposition", `attachment; filename="${result.filename}"`);
+		res.setHeader("Content-Length", String(result.data.length));
+		res.send(result.data);
+	},
+);
 
 shirtRouter.get("/shirts/:id", async (req, res) => {
 	res.json({

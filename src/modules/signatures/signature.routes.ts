@@ -9,6 +9,7 @@ import {
   createSignatureUpload,
   getPublicSignatureAssetUrl,
 } from "./signature.service.js";
+import { getSignaturePlaygroundOptions } from "./signature-options.js";
 
 export const signatureRouter = Router();
 
@@ -30,6 +31,11 @@ function getSigningToken(authorization: string | undefined) {
   }
   return token;
 }
+
+signatureRouter.get("/signing/options", signingLimiter, (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.json({ success: true, data: getSignaturePlaygroundOptions() });
+});
 
 signatureRouter.post("/signing/resume", signingLimiter, async (req, res) => {
   const { reference } = parseOrThrow(resumeSigningSchema, req.body);

@@ -59,6 +59,8 @@ describe("public shirt transforms", () => {
 
     expect(signature).toMatchObject({
       id: "sig-1",
+      inkColor: "black",
+      penWidthMm: 2.5,
       surfaceId: "front-left",
       position: { x: 0.12, y: 0.44 },
       size: { width: 42, height: 18 },

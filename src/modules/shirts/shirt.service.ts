@@ -147,6 +147,43 @@ export async function getShirt(ownerId: string, id: string) {
 	return toOwnerShirt(await findOwned(ownerId, id));
 }
 
+export async function listOwnerSignatures(ownerId: string, shirtId: string) {
+	const row = await prisma.shirt.findFirst({
+		where: { id: shirtId, ownerId },
+		select: {
+			id: true,
+			signatures: {
+				where: { visibility: "VISIBLE" },
+				orderBy: { submittedAt: "desc" },
+				select: {
+					id: true,
+					assetKey: true,
+					inkColor: true,
+					penWidthMm: true,
+					surfaceId: true,
+					uvX: true,
+					uvY: true,
+					width: true,
+					height: true,
+					rotation: true,
+					scale: true,
+					submittedAt: true,
+					visibility: true,
+					payment: { select: { contributorName: true } },
+				},
+			},
+		},
+	});
+
+	if (!row) throw new HttpError(404, "SHIRT_NOT_FOUND", "Shirt not found.");
+
+	return row.signatures.map(({ payment, ...signature }) => ({
+		...toPublicSignature(signature),
+		contributorName: payment.contributorName,
+		assetUrl: `/api/v1/public/signatures/${signature.id}/asset`,
+	}));
+}
+
 export async function updateShirtStatus(
 	ownerId: string,
 	id: string,
@@ -198,6 +235,8 @@ export async function listPublicSignatures(slug: string) {
 				select: {
 					id: true,
 					assetKey: true,
+					inkColor: true,
+					penWidthMm: true,
 					surfaceId: true,
 					uvX: true,
 					uvY: true,

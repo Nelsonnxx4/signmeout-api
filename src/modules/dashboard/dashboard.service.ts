@@ -35,6 +35,8 @@ export async function getDashboardSummary(userId: string) {
         select: {
           id: true,
           assetKey: true,
+          inkColor: true,
+          penWidthMm: true,
           surfaceId: true,
           uvX: true,
           uvY: true,
