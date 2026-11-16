@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { s3Mock } = vi.hoisted(() => ({
+const { s3Mock, getSignedUrlMock } = vi.hoisted(() => ({
   s3Mock: { send: vi.fn() },
+  getSignedUrlMock: vi.fn(async () => "https://r2.example/signed-upload"),
 }));
 
 vi.mock("../../src/config/env.js", () => ({
@@ -34,7 +35,7 @@ vi.mock("@aws-sdk/client-s3", () => {
 });
 
 vi.mock("@aws-sdk/s3-request-presigner", () => ({
-  getSignedUrl: vi.fn(async () => "https://r2.example/signed-upload"),
+  getSignedUrl: getSignedUrlMock,
 }));
 
 import sharp from "sharp";
@@ -60,8 +61,17 @@ describe("R2 signature storage", () => {
       expiresInSeconds: 300,
       requiredHeaders: {
         "Content-Type": "image/png",
+        "x-amz-meta-entitlement": entitlementId,
       },
     });
+    expect(getSignedUrlMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        expiresIn: 300,
+        unhoistableHeaders: new Set(["x-amz-meta-entitlement"]),
+      }),
+    );
   });
 
   it("normalizes valid uploaded images to private WebP assets", async () => {

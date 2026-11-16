@@ -66,7 +66,12 @@ export async function createSignatureUploadUrl(
       ContentLength: sizeBytes,
       Metadata: { entitlement: entitlementId },
     }),
-    { expiresIn: 300 },
+    {
+      expiresIn: 300,
+      // R2 must receive this as an actual header so it is persisted and can
+      // be verified with HeadObject after the browser upload completes.
+      unhoistableHeaders: new Set(["x-amz-meta-entitlement"]),
+    },
   );
 
   return {
@@ -75,6 +80,7 @@ export async function createSignatureUploadUrl(
     expiresInSeconds: 300,
     requiredHeaders: {
       "Content-Type": contentType,
+      "x-amz-meta-entitlement": entitlementId,
     },
   };
 }
