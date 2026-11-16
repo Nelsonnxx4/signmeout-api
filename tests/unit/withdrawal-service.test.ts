@@ -39,6 +39,7 @@ const withdrawal = {
   amountKobo: 5_000,
   idempotencyKey: "request-key",
   status: "PENDING",
+  failureReason: null,
   transferReference: null,
 };
 
@@ -127,8 +128,9 @@ describe("requestWithdrawal", () => {
         idempotencyKey: true,
         requestedAt: true,
         adminResponseDeadline: true,
-        transferReference: true,
         processedAt: true,
+        failureReason: true,
+        transferReference: true,
       },
     });
     expect(txMock.studentVerification.findFirst).not.toHaveBeenCalled();

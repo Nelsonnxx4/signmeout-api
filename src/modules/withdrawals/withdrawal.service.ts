@@ -20,6 +20,19 @@ const isPrismaErrorCode = (error: unknown, code: string) =>
   "code" in error &&
   error.code === code;
 
+const withdrawalRequestSelect = {
+  id: true,
+  userId: true,
+  amountKobo: true,
+  status: true,
+  idempotencyKey: true,
+  requestedAt: true,
+  adminResponseDeadline: true,
+  processedAt: true,
+  failureReason: true,
+  transferReference: true,
+} satisfies Prisma.WithdrawalSelect;
+
 async function getLedgerBalance(
   userId: string,
   client: Pick<Prisma.TransactionClient, "ledgerEntry"> = prisma,
@@ -78,17 +91,7 @@ export async function requestWithdrawal(
 ) {
   const existing = await prisma.withdrawal.findUnique({
     where: { idempotencyKey },
-    select: {
-      id: true,
-      userId: true,
-      amountKobo: true,
-      status: true,
-      idempotencyKey: true,
-      requestedAt: true,
-      adminResponseDeadline: true,
-      transferReference: true,
-      processedAt: true,
-    },
+    select: withdrawalRequestSelect,
   });
   if (existing) {
     if (existing.userId !== userId || existing.amountKobo !== amountKobo) {
@@ -144,17 +147,7 @@ export async function requestWithdrawal(
             adminResponseDeadline,
             payoutNextAttemptAt: adminResponseDeadline,
           },
-          select: {
-            id: true,
-            userId: true,
-            amountKobo: true,
-            status: true,
-            idempotencyKey: true,
-            requestedAt: true,
-            adminResponseDeadline: true,
-            transferReference: true,
-            processedAt: true,
-          },
+          select: withdrawalRequestSelect,
         });
 
         await tx.withdrawalAlert.create({
@@ -195,17 +188,7 @@ export async function requestWithdrawal(
     if (isPrismaErrorCode(error, "P2002")) {
       const replay = await prisma.withdrawal.findUnique({
         where: { idempotencyKey },
-        select: {
-          id: true,
-          userId: true,
-          amountKobo: true,
-          status: true,
-          idempotencyKey: true,
-          requestedAt: true,
-          adminResponseDeadline: true,
-          transferReference: true,
-          processedAt: true,
-        },
+        select: withdrawalRequestSelect,
       });
       if (replay && replay.userId === userId && replay.amountKobo === amountKobo) return replay;
       if (replay) {
