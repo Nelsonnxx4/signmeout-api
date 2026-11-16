@@ -48,7 +48,7 @@ const uploadKey = `signature-uploads/${entitlementId}/00000000-0000-4000-8000-00
 
 describe("R2 signature storage", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    s3Mock.send.mockReset();
   });
 
   it("creates an entitlement-scoped short-lived upload URL", async () => {
@@ -60,7 +60,6 @@ describe("R2 signature storage", () => {
       expiresInSeconds: 300,
       requiredHeaders: {
         "Content-Type": "image/png",
-        "x-amz-meta-entitlement": entitlementId,
       },
     });
   });

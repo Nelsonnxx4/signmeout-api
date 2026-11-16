@@ -23,6 +23,11 @@ const client =
     ? new S3Client({
         region: "auto",
         endpoint: `https://${env.r2AccountId}.r2.cloudflarestorage.com`,
+        // The SDK defaults to CRC32 for PutObject. Presigning happens before the
+        // browser payload exists, so that default signs the checksum of an empty
+        // body and R2 rejects the real image upload.
+        requestChecksumCalculation: "WHEN_REQUIRED",
+        responseChecksumValidation: "WHEN_REQUIRED",
         credentials: {
           accessKeyId: env.r2AccessKeyId,
           secretAccessKey: env.r2SecretAccessKey,
@@ -70,8 +75,6 @@ export async function createSignatureUploadUrl(
     expiresInSeconds: 300,
     requiredHeaders: {
       "Content-Type": contentType,
-      "Content-Length": String(sizeBytes),
-      "x-amz-meta-entitlement": entitlementId,
     },
   };
 }
